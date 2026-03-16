@@ -1,15 +1,14 @@
 [Unit]
 Description=Idle Auto-Shutdown (2 hours)
-After=graphical.target
-Wants=graphical.target
+After=graphical-session.target
+Requires=graphical-session.target
 
 [Service]
 Type=simple
+ExecStartPre=/bin/sleep 60
 ExecStart=/opt/ghost/scripts/idle_shutdown.sh
 Restart=on-failure
-RestartSec=60
-Environment=DISPLAY=:0
-Environment=HOME=/root
+RestartSec=120
 
 [Install]
-WantedBy=graphical.target
+WantedBy=graphical-session.target

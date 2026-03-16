@@ -285,11 +285,16 @@ echo "→ Installing systemd services..."
 cp systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
 
-for SVC in mac-randomize idle-shutdown; do
-    systemctl enable --now "${SVC}.service" 2>/dev/null && \
-        echo "  [ok] ${SVC}.service" || \
-        ERRORS+=("SERVICE FAILED: ${SVC}.service")
-done
+# mac-randomize: start immediately
+systemctl enable --now mac-randomize.service 2>/dev/null && \
+    echo "  [ok] mac-randomize.service" || \
+    ERRORS+=("SERVICE FAILED: mac-randomize.service")
+
+# idle-shutdown: enable only — starts automatically after next login
+# Do NOT start now — it requires a live graphical session
+systemctl enable idle-shutdown.service 2>/dev/null && \
+    echo "  [ok] idle-shutdown.service (starts after next login)" || \
+    ERRORS+=("SERVICE FAILED: idle-shutdown.service")
 systemctl enable ram-wipe.service 2>/dev/null && \
     echo "  [ok] ram-wipe.service (activates at shutdown)" || \
     ERRORS+=("SERVICE FAILED: ram-wipe.service")
