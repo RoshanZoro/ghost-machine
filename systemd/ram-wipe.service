@@ -1,0 +1,12 @@
+[Unit]
+Description=RAM Wipe on Shutdown (cold-boot attack prevention)
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ghost/scripts/ram_wipe.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=shutdown.target halt.target reboot.target

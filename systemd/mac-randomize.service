@@ -1,0 +1,13 @@
+[Unit]
+Description=MAC Address Randomizer with Jitter
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/ghost/scripts/mac_scheduler.sh
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target

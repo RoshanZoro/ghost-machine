@@ -1,0 +1,22 @@
+# Append these lines to /etc/tor/torrc
+# Ghost Machine — Tor transparent proxy config
+
+# Transparent proxy ports
+TransPort 9040
+DNSPort 5353
+AutomapHostsOnResolve 1
+
+# Circuit performance
+CircuitBuildTimeout 10
+LearnCircuitBuildTimeout 0
+MaxCircuitDirtiness 600
+NewCircuitPeriod 30
+
+# Privacy / hardening
+SafeLogging 1
+AvoidDiskWrites 1
+HardwareAccel 1
+
+# Exclude known bad exit nodes (optional — add country codes)
+# ExcludeExitNodes {ru},{cn},{us},{gb},{au},{ca},{nz}
+# StrictNodes 1
