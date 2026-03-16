@@ -60,7 +60,7 @@ These scripts are for **legal security research, penetration testing, privacy pr
 
 ```bash
 # Clone this repo
-git clone https://github.com/RoshanZoro/ghost-machine.git
+git clone https://github.com/youruser/ghost-machine.git
 cd ghost-machine
 
 # Run the master installer

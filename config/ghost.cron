@@ -1,12 +1,18 @@
 # /etc/cron.d/ghost — Ghost Machine scheduled tasks
-# Runs as root
 
-# Wipe logs, history, and temp files every night at 3:00 AM
+# Wipe logs nightly at 3am
 0 3 * * * root /opt/ghost/scripts/wipe_logs.sh >> /var/log/ghost/cron.log 2>&1
 
-# Rotate hostname every 6 hours
-0 */6 * * * root /opt/ghost/scripts/hostname_randomize.sh >> /var/log/ghost/cron.log 2>&1
+# Full identity rotation every 6 hours (TZ, locale, hostname, MAC, machine-id)
+0 */6 * * * root /opt/ghost/scripts/identity_randomize.sh >> /var/log/ghost/cron.log 2>&1
 
-# MAC rotation is handled by the mac-randomize systemd service (hourly with jitter)
-# Cron entry below is a fallback only — disable if service is running
-# 0 * * * * root /opt/ghost/scripts/mac_randomize.sh >> /var/log/ghost/cron.log 2>&1
+# AIDE integrity check daily at 4am
+0 4 * * * root /opt/ghost/scripts/intrusion_detection.sh check >> /var/log/ghost/cron.log 2>&1
+
+# Self port scan weekly (Sunday 2am)
+0 2 * * 0 root /opt/ghost/scripts/self_scan.sh >> /var/log/ghost/cron.log 2>&1
+
+# Leak test 30 seconds after every boot
+@reboot root sleep 30 && /opt/ghost/scripts/leak_test.sh >> /var/log/ghost/cron.log 2>&1
+
+# MAC rotation handled by mac-randomize.service (hourly with jitter)
