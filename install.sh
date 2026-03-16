@@ -107,6 +107,55 @@ install_secure_delete() {
 }
 
 # mat2: AUR → pip
+# pamac: Manjaro's built-in AUR helper — use it if available
+install_aur_pamac_first() {
+    local PKG="$1"
+    pacman -Qi "$PKG" &>/dev/null && { echo "  [ok] $PKG (already installed)"; return 0; }
+    # pamac is Manjaro's default — try it first, no sudo needed
+    if command -v pamac &>/dev/null; then
+        pamac build --no-confirm "$PKG" 2>/dev/null &&             { echo "  [ok] $PKG (pamac)"; return 0; }
+    fi
+    # Fall through to generic install_aur
+    install_aur "$PKG"
+}
+
+# aide: AUR on Manjaro (package name is just "aide")
+install_aide() {
+    if pacman -Qi aide &>/dev/null || command -v aide &>/dev/null; then
+        echo "  [ok] aide (already installed)"; return 0
+    fi
+    echo "  Installing aide (AUR)..."
+    install_aur_pamac_first "aide" && return 0
+    echo "  [!!] aide not installed — intrusion_detection.sh will warn on first run"
+    ERRORS+=("INFO: aide unavailable — run: yay -S aide  or  pamac build aide")
+    return 1
+}
+
+# fswebcam: AUR only — used by tamper_detect.sh (ffmpeg is the primary fallback)
+install_fswebcam() {
+    if pacman -Qi fswebcam &>/dev/null || command -v fswebcam &>/dev/null; then
+        echo "  [ok] fswebcam (already installed)"; return 0
+    fi
+    echo "  Installing fswebcam (AUR)..."
+    install_aur_pamac_first "fswebcam" && return 0
+    echo "  [!!] fswebcam not installed — tamper_detect.sh will use ffmpeg instead (already installed)"
+    ERRORS+=("INFO: fswebcam unavailable — tamper_detect.sh uses ffmpeg fallback (fine)")
+    return 1
+}
+
+# xautolock: AUR only — used for auto screen lock. xss-lock is already installed as replacement.
+install_xautolock() {
+    if pacman -Qi xautolock &>/dev/null || command -v xautolock &>/dev/null; then
+        echo "  [ok] xautolock (already installed)"; return 0
+    fi
+    echo "  Installing xautolock (AUR)..."
+    install_aur_pamac_first "xautolock" && return 0
+    # xss-lock is the official-repo alternative and is already installed
+    echo "  [!!] xautolock not installed — xss-lock is available as replacement"
+    ERRORS+=("INFO: xautolock unavailable — xss-lock installed instead (same purpose)")
+    return 1
+}
+
 install_mat2() {
     command -v mat2 &>/dev/null && { echo "  [ok] mat2"; return 0; }
     install_aur "mat2" && return 0
@@ -167,8 +216,8 @@ run_step() {
 # ═════════════════════════════════════════════════════════════
 # 1. Official repo packages
 #    Correct Manjaro/Arch package names verified:
-#    - aide       → aide (community)
-#    - xautolock  → xorg-xautolock (correct name in Arch repos)
+#    - aide       → AUR only, handled separately
+#    - xautolock  → AUR only; replaced with xss-lock (official repos)
 #    - xprintidle → xprintidle (community)
 # ═════════════════════════════════════════════════════════════
 echo ""
@@ -179,7 +228,7 @@ for PKG in \
     torsocks \
     usbguard \
     bleachbit \
-    xorg-xautolock \
+    xss-lock \
     xprintidle \
     inotify-tools \
     procps-ng \
@@ -187,7 +236,6 @@ for PKG in \
     coreutils \
     nftables \
     sqlite \
-    aide \
     audit \
     nmap \
     curl \
@@ -201,7 +249,8 @@ for PKG in \
     make \
     python-pip \
     ffmpeg \
-    fswebcam
+    xbindkeys \
+    xterm
 do
     install_pkg "$PKG"
 done
@@ -215,6 +264,9 @@ install_secure_delete
 install_mat2
 install_librewolf
 install_tor_browser
+install_aide
+install_fswebcam
+install_xautolock
 
 # ═════════════════════════════════════════════════════════════
 # 3. Copy scripts
@@ -343,7 +395,7 @@ fi
 echo ""
 echo "→ Configuring hotkeys for $BUILD_USER..."
 if [ -f "$INSTALL_DIR/hotkeys_setup.sh" ]; then
-    sudo -u "$BUILD_USER" bash "$INSTALL_DIR/hotkeys_setup.sh" 2>/dev/null && \
+    DISPLAY=:0 sudo -u "$BUILD_USER" bash "$INSTALL_DIR/hotkeys_setup.sh" && \
         echo "  Hotkeys configured." || \
         echo "  [!!] Hotkey setup failed — run manually: bash $INSTALL_DIR/hotkeys_setup.sh"
 fi

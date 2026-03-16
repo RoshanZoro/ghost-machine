@@ -1,267 +1,202 @@
 #!/bin/bash
-# hotkeys_setup.sh — Auto-configure Ghost Machine hotkeys for your DE/WM
-# Supports: i3, Sway, XFCE, KDE, GNOME, Openbox
+# hotkeys_setup.sh — Configure Ghost Machine hotkeys via xbindkeys
+# Works on ANY DE/WM (XFCE, KDE, GNOME, i3, Openbox, bare X11, etc.)
 # Run as your DESKTOP USER (not root)
 
 GHOST="/opt/ghost/scripts"
 
-detect_de() {
-    if [ -n "$SWAYSOCK" ]; then echo "sway"
-    elif [ -n "$I3SOCK" ] || pgrep -x i3 &>/dev/null; then echo "i3"
-    elif pgrep -x xfwm4 &>/dev/null || pgrep -x xfce4-session &>/dev/null; then echo "xfce"
-    elif [ "$XDG_CURRENT_DESKTOP" = "KDE" ] || pgrep -x kwin_x11 &>/dev/null || pgrep -x kwin_wayland &>/dev/null; then echo "kde"
-    elif [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || pgrep -x gnome-shell &>/dev/null; then echo "gnome"
-    elif pgrep -x openbox &>/dev/null; then echo "openbox"
-    else echo "unknown"
-    fi
-}
-
-DE=$(detect_de)
-echo "Detected environment: $DE"
-echo ""
-
-# ── i3 / Sway ─────────────────────────────────────────────────────────────────
-setup_i3_sway() {
-    local CONFIG="$1"
-    local MOD="Mod4"  # Super key
-
-    # Remove any existing ghost bindings to avoid duplicates
-    sed -i '/ghost.*scripts/d' "$CONFIG" 2>/dev/null
-
-    cat >> "$CONFIG" << CONF
-
-# ── Ghost Machine Hotkeys ──────────────────────────────────────────────────
-bindsym $MOD+F1  exec --no-startup-id pkexec $GHOST/panic_shutdown.sh
-bindsym $MOD+F2  exec --no-startup-id pkexec $GHOST/nuclear_wipe.sh
-bindsym $MOD+F3  exec --no-startup-id pkexec $GHOST/mac_randomize.sh
-bindsym $MOD+F4  exec --no-startup-id pkexec $GHOST/identity_randomize.sh
-bindsym $MOD+F5  exec --no-startup-id pkexec $GHOST/tor_enable.sh
-bindsym $MOD+F6  exec --no-startup-id pkexec $GHOST/tor_disable.sh
-bindsym $MOD+F7  exec --no-startup-id pkexec $GHOST/kill_av.sh
-bindsym $MOD+F8  exec --no-startup-id pkexec $GHOST/wipe_logs.sh
-bindsym $MOD+F9  exec --no-startup-id pkexec $GHOST/leak_test.sh
-bindsym $MOD+F10 exec --no-startup-id bash $GHOST/metadata_wipe.sh .
-# ────────────────────────────────────────────────────────────────────────────
-CONF
-    echo "✅ Hotkeys written to $CONFIG"
-    echo "   Reload config: Mod+Shift+R"
-}
-
-# ── XFCE ──────────────────────────────────────────────────────────────────────
-setup_xfce() {
-    command -v xfconf-query &>/dev/null || {
-        echo "xfconf-query not found — XFCE tools missing?"
-        return 1
+# ── 1. Install xbindkeys if missing ──────────────────────────────────────────
+if ! command -v xbindkeys &>/dev/null; then
+    echo "→ Installing xbindkeys..."
+    sudo pacman -S --needed --noconfirm xbindkeys 2>/dev/null || {
+        echo "  [!!] Could not install xbindkeys — run: sudo pacman -S xbindkeys"
+        exit 1
     }
+fi
 
-    declare -A BINDINGS=(
-        ["<Super>F1"]="pkexec $GHOST/panic_shutdown.sh"
-        ["<Super>F2"]="pkexec $GHOST/nuclear_wipe.sh"
-        ["<Super>F3"]="pkexec $GHOST/mac_randomize.sh"
-        ["<Super>F4"]="pkexec $GHOST/identity_randomize.sh"
-        ["<Super>F5"]="pkexec $GHOST/tor_enable.sh"
-        ["<Super>F6"]="pkexec $GHOST/tor_disable.sh"
-        ["<Super>F7"]="pkexec $GHOST/kill_av.sh"
-        ["<Super>F8"]="pkexec $GHOST/wipe_logs.sh"
-        ["<Super>F9"]="pkexec $GHOST/leak_test.sh"
-        ["<Super>F10"]="bash $GHOST/metadata_wipe.sh ."
-    )
+# ── 2. Install xterm for script output windows ───────────────────────────────
+if ! command -v xterm &>/dev/null; then
+    echo "→ Installing xterm (used to show script output)..."
+    sudo pacman -S --needed --noconfirm xterm 2>/dev/null || true
+fi
 
-    for KEY in "${!BINDINGS[@]}"; do
-        CMD="${BINDINGS[$KEY]}"
-        # xfce4-keyboard-shortcuts uses array properties
-        xfconf-query -c xfce4-keyboard-shortcuts \
-            -p "/commands/custom/$KEY" \
-            -n -t string -s "$CMD" 2>/dev/null || \
-        xfconf-query -c xfce4-keyboard-shortcuts \
-            -p "/commands/custom/$KEY" \
-            -s "$CMD" 2>/dev/null
-    done
-    echo "✅ XFCE hotkeys configured via xfconf-query"
-    echo "   Log out and back in for changes to take effect."
-}
+# ── 3. Write polkit rule so scripts run as root WITHOUT password prompt ───────
+POLKIT_RULE="/etc/polkit-1/rules.d/49-ghost.rules"
+if [ ! -f "$POLKIT_RULE" ]; then
+    echo "→ Writing polkit rule (allows ghost scripts to run as root without password)..."
+    sudo tee "$POLKIT_RULE" > /dev/null << 'POLKIT'
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program").indexOf("/opt/ghost/scripts/") === 0 &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});
+POLKIT
+    echo "  Polkit rule written."
+fi
 
-# ── KDE Plasma ────────────────────────────────────────────────────────────────
-setup_kde() {
-    # KDE uses kglobalaccel / khotkeys
-    # Most reliable method: write a khotkeys file
-    local KHOTKEYS_DIR="$HOME/.config"
-    local KHOTKEYS_FILE="$KHOTKEYS_DIR/khotkeysrc"
+# ── 4. Also write a sudoers rule as fallback ──────────────────────────────────
+SUDOERS_FILE="/etc/sudoers.d/ghost"
+if [ ! -f "$SUDOERS_FILE" ]; then
+    echo "→ Writing sudoers rule..."
+    sudo tee "$SUDOERS_FILE" > /dev/null << SUDOERS
+# Ghost Machine — allow desktop user to run ghost scripts without password
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/panic_shutdown.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/nuclear_wipe.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/mac_randomize.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/mac_scheduler.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/identity_randomize.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/tor_enable.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/tor_disable.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/kill_av.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/wipe_logs.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/leak_test.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/metadata_wipe.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/dns_hardening.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/wifi_forget.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/intrusion_detection.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/tamper_detect.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/self_scan.sh
+${USER} ALL=(ALL) NOPASSWD: ${GHOST}/ram_wipe.sh
+${USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff
+${USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff --force
+${USER} ALL=(ALL) NOPASSWD: /sbin/poweroff
+SUDOERS
+    sudo chmod 440 "$SUDOERS_FILE"
+    echo "  Sudoers rule written."
+fi
 
-    echo "KDE detected. Writing khotkeys shortcuts..."
+# ── 5. Write .xbindkeysrc ────────────────────────────────────────────────────
+XBINDKEYS_RC="$HOME/.xbindkeysrc"
+echo "→ Writing $XBINDKEYS_RC..."
 
-    # Use xdotool method via custom shortcuts in kglobalaccel
-    # The most reliable cross-version approach is qdbus
-    declare -A BINDINGS=(
-        ["Super+F1"]="pkexec $GHOST/panic_shutdown.sh"
-        ["Super+F2"]="pkexec $GHOST/nuclear_wipe.sh"
-        ["Super+F3"]="pkexec $GHOST/mac_randomize.sh"
-        ["Super+F4"]="pkexec $GHOST/identity_randomize.sh"
-        ["Super+F5"]="pkexec $GHOST/tor_enable.sh"
-        ["Super+F6"]="pkexec $GHOST/tor_disable.sh"
-        ["Super+F7"]="pkexec $GHOST/kill_av.sh"
-        ["Super+F8"]="pkexec $GHOST/wipe_logs.sh"
-        ["Super+F9"]="pkexec $GHOST/leak_test.sh"
-        ["Super+F10"]="bash $GHOST/metadata_wipe.sh ."
-    )
+cat > "$XBINDKEYS_RC" << XBRC
+# Ghost Machine hotkeys — managed by hotkeys_setup.sh
+# Uses xterm to show output. Close the window when done.
 
-    local I=1
-    for KEY in "${!BINDINGS[@]}"; do
-        CMD="${BINDINGS[$KEY]}"
-        # Add via kwriteconfig5 into khotkeys
-        kwriteconfig5 --file khotkeysrc \
-            --group "Data_${I}" --key "Comment" "Ghost Machine: $KEY" 2>/dev/null
-        (( I++ ))
-    done
+# Super+F1 — Panic shutdown (INSTANT — no window, fires immediately)
+"sudo ${GHOST}/panic_shutdown.sh"
+  Super + F1
 
-    echo "✅ KDE: Use System Settings → Shortcuts → Custom Shortcuts to verify."
-    echo "   Or add manually: System Settings → Shortcuts → Custom Shortcuts → New → Command/URL"
-    print_manual_table
-}
+# Super+F2 — Nuclear wipe (triple-press trigger)
+"xterm -title 'GHOST NUKE' -bg black -fg red -e sudo ${GHOST}/nuclear_wipe.sh"
+  Super + F2
 
-# ── GNOME ─────────────────────────────────────────────────────────────────────
-setup_gnome() {
-    command -v gsettings &>/dev/null || { echo "gsettings not found."; return 1; }
+# Super+F3 — Rotate MAC address
+"xterm -title 'Ghost: MAC Rotate' -bg black -fg green -e sudo ${GHOST}/mac_randomize.sh"
+  Super + F3
 
-    declare -a NAMES=("GhostPanic" "GhostNuke" "GhostMAC" "GhostIdentity"
-                      "GhostTorOn" "GhostTorOff" "GhostKillAV" "GhostWipeLogs"
-                      "GhostLeakTest" "GhostMetadata")
-    declare -a CMDS=(
-        "pkexec $GHOST/panic_shutdown.sh"
-        "pkexec $GHOST/nuclear_wipe.sh"
-        "pkexec $GHOST/mac_randomize.sh"
-        "pkexec $GHOST/identity_randomize.sh"
-        "pkexec $GHOST/tor_enable.sh"
-        "pkexec $GHOST/tor_disable.sh"
-        "pkexec $GHOST/kill_av.sh"
-        "pkexec $GHOST/wipe_logs.sh"
-        "pkexec $GHOST/leak_test.sh"
-        "bash $GHOST/metadata_wipe.sh ."
-    )
-    declare -a KEYS=(
-        "<Super>F1" "<Super>F2" "<Super>F3" "<Super>F4" "<Super>F5"
-        "<Super>F6" "<Super>F7" "<Super>F8" "<Super>F9" "<Super>F10"
-    )
+# Super+F4 — Full identity rotation
+"xterm -title 'Ghost: Identity' -bg black -fg cyan -e sudo ${GHOST}/identity_randomize.sh"
+  Super + F4
 
-    local BASE="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
-    local PATHS=""
+# Super+F5 — Enable Tor + kill switch
+"xterm -title 'Ghost: Tor ON' -bg black -fg green -e sudo ${GHOST}/tor_enable.sh"
+  Super + F5
 
-    for I in "${!NAMES[@]}"; do
-        local PATH_I="${BASE}/ghost${I}/"
-        PATHS="${PATHS}'${PATH_I}',"
-        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"${PATH_I}" \
-            name  "${NAMES[$I]}" 2>/dev/null
-        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"${PATH_I}" \
-            command "${CMDS[$I]}" 2>/dev/null
-        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"${PATH_I}" \
-            binding "${KEYS[$I]}" 2>/dev/null
-    done
+# Super+F6 — Disable Tor
+"xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -e sudo ${GHOST}/tor_disable.sh"
+  Super + F6
 
-    # Register all paths
-    PATHS="[${PATHS%,}]"
-    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$PATHS" 2>/dev/null
+# Super+F7 — Kill webcam + mic
+"xterm -title 'Ghost: A/V Kill' -bg black -fg red -e sudo ${GHOST}/kill_av.sh"
+  Super + F7
 
-    echo "✅ GNOME custom shortcuts configured."
-}
+# Super+F8 — Wipe logs + history
+"xterm -title 'Ghost: Wipe Logs' -bg black -fg magenta -e sudo ${GHOST}/wipe_logs.sh"
+  Super + F8
 
-# ── Openbox ───────────────────────────────────────────────────────────────────
-setup_openbox() {
-    local KB_FILE="$HOME/.config/openbox/rc.xml"
-    [ -f "$KB_FILE" ] || { echo "Openbox rc.xml not found at $KB_FILE"; return 1; }
+# Super+F9 — Run leak test
+"xterm -title 'Ghost: Leak Test' -bg black -fg cyan -e sudo ${GHOST}/leak_test.sh"
+  Super + F9
 
-    # Insert before </keyboard>
-    local BLOCK='    <!-- Ghost Machine Hotkeys -->
-    <keybind key="W-F1"><action name="Execute"><command>pkexec '"$GHOST"'/panic_shutdown.sh</command></action></keybind>
-    <keybind key="W-F2"><action name="Execute"><command>pkexec '"$GHOST"'/nuclear_wipe.sh</command></action></keybind>
-    <keybind key="W-F3"><action name="Execute"><command>pkexec '"$GHOST"'/mac_randomize.sh</command></action></keybind>
-    <keybind key="W-F4"><action name="Execute"><command>pkexec '"$GHOST"'/identity_randomize.sh</command></action></keybind>
-    <keybind key="W-F5"><action name="Execute"><command>pkexec '"$GHOST"'/tor_enable.sh</command></action></keybind>
-    <keybind key="W-F6"><action name="Execute"><command>pkexec '"$GHOST"'/tor_disable.sh</command></action></keybind>
-    <keybind key="W-F7"><action name="Execute"><command>pkexec '"$GHOST"'/kill_av.sh</command></action></keybind>
-    <keybind key="W-F8"><action name="Execute"><command>pkexec '"$GHOST"'/wipe_logs.sh</command></action></keybind>
-    <keybind key="W-F9"><action name="Execute"><command>pkexec '"$GHOST"'/leak_test.sh</command></action></keybind>
-    <keybind key="W-F10"><action name="Execute"><command>bash '"$GHOST"'/metadata_wipe.sh .</command></action></keybind>'
+# Super+F10 — Wipe metadata in current dir
+"xterm -title 'Ghost: Metadata Wipe' -bg black -fg yellow -e sudo ${GHOST}/metadata_wipe.sh \${HOME}"
+  Super + F10
 
-    sed -i "s|</keyboard>|${BLOCK}\n  </keyboard>|" "$KB_FILE"
-    openbox --reconfigure 2>/dev/null
-    echo "✅ Openbox hotkeys written to $KB_FILE"
-}
+# Super+F11 — WiFi forget all profiles
+"xterm -title 'Ghost: WiFi Forget' -bg black -fg red -e sudo ${GHOST}/wifi_forget.sh"
+  Super + F11
 
-# ── pkexec policy (allows hotkeys to call root scripts) ───────────────────────
-setup_pkexec() {
-    local POLICY_DIR="/usr/share/polkit-1/actions"
-    local POLICY_FILE="$POLICY_DIR/org.ghost.scripts.policy"
+# Super+F12 — Mount/unmount encrypted vault
+"xterm -title 'Ghost: Vault' -bg black -fg cyan -e sudo ${GHOST}/mount_vault.sh"
+  Super + F12
+XBRC
 
-    [ -d "$POLICY_DIR" ] || return 0
+echo "  Written."
 
-    cat > "$POLICY_FILE" << 'POLICY'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE policyconfig PUBLIC
- "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-<policyconfig>
-  <action id="org.ghost.scripts.run">
-    <description>Run Ghost Machine security scripts</description>
-    <message>Authentication required to run Ghost Machine script</message>
-    <defaults>
-      <allow_any>auth_admin</allow_any>
-      <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
-    </defaults>
-  </action>
-</policyconfig>
-POLICY
-    echo "  pkexec policy installed — hotkeys won't prompt for password."
-}
+# ── 6. Kill any existing xbindkeys, start fresh ───────────────────────────────
+echo "→ Starting xbindkeys..."
+pkill -x xbindkeys 2>/dev/null || true
+sleep 0.5
+xbindkeys 2>/dev/null &
+disown
 
-# ── Manual reference table ────────────────────────────────────────────────────
-print_manual_table() {
-    echo ""
-    echo "Manual hotkey reference:"
-    echo "  Super+F1  → Panic shutdown (instant power cut)"
-    echo "  Super+F2  → Nuclear wipe   (press 3x in 5s)"
-    echo "  Super+F3  → Rotate MAC"
-    echo "  Super+F4  → Full identity rotation"
-    echo "  Super+F5  → Enable Tor + kill switch"
-    echo "  Super+F6  → Disable Tor"
-    echo "  Super+F7  → Kill webcam + mic"
-    echo "  Super+F8  → Wipe logs + history"
-    echo "  Super+F9  → Run leak test"
-    echo "  Super+F10 → Wipe metadata (current dir)"
-}
+# Verify it started
+sleep 1
+if pgrep -x xbindkeys &>/dev/null; then
+    echo "  xbindkeys running — hotkeys active NOW."
+else
+    echo "  [!!] xbindkeys failed to start."
+    echo "       Try running manually: xbindkeys --verbose"
+    exit 1
+fi
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── 7. Make xbindkeys start automatically on login ────────────────────────────
+echo "→ Adding xbindkeys to autostart..."
 
-# Install pkexec policy first (works for all DEs)
-sudo bash -c "$(declare -f setup_pkexec); setup_pkexec" 2>/dev/null || \
-    setup_pkexec 2>/dev/null || true
+# Method A: ~/.config/autostart (works for XFCE, KDE, GNOME, most DEs)
+AUTOSTART_DIR="$HOME/.config/autostart"
+mkdir -p "$AUTOSTART_DIR"
+cat > "$AUTOSTART_DIR/xbindkeys.desktop" << DESKTOP
+[Desktop Entry]
+Type=Application
+Name=xbindkeys
+Exec=xbindkeys
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Comment=Ghost Machine hotkey daemon
+DESKTOP
+echo "  Autostart entry written to $AUTOSTART_DIR/xbindkeys.desktop"
 
-case "$DE" in
-    i3)
-        CFG="${HOME}/.config/i3/config"
-        [ -f "$CFG" ] && setup_i3_sway "$CFG" || echo "i3 config not found at $CFG"
-        ;;
-    sway)
-        CFG="${HOME}/.config/sway/config"
-        [ -f "$CFG" ] && setup_i3_sway "$CFG" || echo "Sway config not found at $CFG"
-        ;;
-    xfce)
-        setup_xfce
-        ;;
-    kde)
-        setup_kde
-        ;;
-    gnome)
-        setup_gnome
-        ;;
-    openbox)
-        setup_openbox
-        ;;
-    *)
-        echo "Could not detect DE/WM automatically."
-        echo "Run with argument: $0 [i3|sway|xfce|kde|gnome|openbox]"
-        print_manual_table
-        ;;
-esac
+# Method B: ~/.xinitrc / ~/.xprofile fallback (bare WMs like i3 that don't use autostart)
+for RC in "$HOME/.xprofile" "$HOME/.xinitrc"; do
+    if [ -f "$RC" ] || echo "$RC" | grep -q "xprofile"; then
+        if ! grep -q "xbindkeys" "$RC" 2>/dev/null; then
+            echo "xbindkeys &" >> "$RC"
+            echo "  Added xbindkeys to $RC"
+        fi
+    fi
+done
 
-print_manual_table
+# Always write .xprofile since it's the most universal
+if ! grep -q "xbindkeys" "$HOME/.xprofile" 2>/dev/null; then
+    echo "xbindkeys &" >> "$HOME/.xprofile"
+    echo "  Added to ~/.xprofile"
+fi
+
+# ── 8. Test a binding ─────────────────────────────────────────────────────────
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " ✅ Ghost Machine hotkeys are ACTIVE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo " Super+F1   Panic shutdown    (instant, no window)"
+echo " Super+F2   Nuclear wipe      (press 3× in 5s)"
+echo " Super+F3   Rotate MAC"
+echo " Super+F4   Identity rotation"
+echo " Super+F5   Tor ON"
+echo " Super+F6   Tor OFF"
+echo " Super+F7   Kill webcam + mic"
+echo " Super+F8   Wipe logs"
+echo " Super+F9   Leak test"
+echo " Super+F10  Metadata wipe"
+echo " Super+F11  WiFi forget"
+echo " Super+F12  Vault open/close"
+echo ""
+echo " Test now — press Super+F9 to run leak test."
+echo " If hotkeys stop working after reboot, run:"
+echo "   xbindkeys"
+echo ""
