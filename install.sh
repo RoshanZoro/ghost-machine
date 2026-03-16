@@ -392,13 +392,107 @@ fi
 # ═════════════════════════════════════════════════════════════
 # 12. Hotkeys (auto-detect DE and configure)
 # ═════════════════════════════════════════════════════════════
+# 12. Hotkeys — write .xbindkeysrc and start xbindkeys as desktop user
+#     hotkeys_setup.sh refuses to run as root, so we must drop privileges.
+#     We also write .xbindkeysrc directly here as a guaranteed fallback.
+# ═════════════════════════════════════════════════════════════
 echo ""
 echo "→ Configuring hotkeys for $BUILD_USER..."
-if [ -f "$INSTALL_DIR/hotkeys_setup.sh" ]; then
-    DISPLAY=:0 sudo -u "$BUILD_USER" bash "$INSTALL_DIR/hotkeys_setup.sh" && \
-        echo "  Hotkeys configured." || \
-        echo "  [!!] Hotkey setup failed — run manually: bash $INSTALL_DIR/hotkeys_setup.sh"
+
+USER_HOME=$(eval echo "~$BUILD_USER")
+GHOST_DIR="$INSTALL_DIR"
+
+# Write the correct .xbindkeysrc directly (Mod4 = Super/Windows key)
+# This bypasses hotkeys_setup.sh entirely for the file-write step
+echo "  Writing $USER_HOME/.xbindkeysrc..."
+cat > "$USER_HOME/.xbindkeysrc" << XBRC
+# Ghost Machine hotkeys
+# Mod4 = Super (Windows) key
+
+"sudo ${GHOST_DIR}/panic_shutdown.sh"
+  Mod4+F1
+
+"xterm -title 'GHOST NUKE' -bg black -fg red -e sudo ${GHOST_DIR}/nuclear_wipe.sh"
+  Mod4+F2
+
+"xterm -title 'Ghost: MAC' -bg black -fg green -e sudo ${GHOST_DIR}/mac_randomize.sh"
+  Mod4+F3
+
+"xterm -title 'Ghost: Identity' -bg black -fg cyan -e sudo ${GHOST_DIR}/identity_randomize.sh"
+  Mod4+F4
+
+"xterm -title 'Ghost: Tor ON' -bg black -fg green -e sudo ${GHOST_DIR}/tor_enable.sh"
+  Mod4+F5
+
+"xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -e sudo ${GHOST_DIR}/tor_disable.sh"
+  Mod4+F6
+
+"xterm -title 'Ghost: AV Kill' -bg black -fg red -e sudo ${GHOST_DIR}/kill_av.sh"
+  Mod4+F7
+
+"xterm -title 'Ghost: Wipe' -bg black -fg magenta -e sudo ${GHOST_DIR}/wipe_logs.sh"
+  Mod4+F8
+
+"xterm -title 'Ghost: Leak Test' -bg black -fg cyan -e sudo ${GHOST_DIR}/leak_test.sh"
+  Mod4+F9
+
+"xterm -title 'Ghost: Metadata' -bg black -fg yellow -e sudo ${GHOST_DIR}/metadata_wipe.sh ${USER_HOME}"
+  Mod4+F10
+
+"xterm -title 'Ghost: WiFi Forget' -bg black -fg red -e sudo ${GHOST_DIR}/wifi_forget.sh"
+  Mod4+F11
+
+"xterm -title 'Ghost: Vault' -bg black -fg cyan -e sudo ${GHOST_DIR}/mount_vault.sh"
+  Mod4+F12
+XBRC
+chown "$BUILD_USER" "$USER_HOME/.xbindkeysrc"
+echo "  Written."
+
+# Write sudoers rule so hotkeys run without password prompt
+if [ ! -f /etc/sudoers.d/ghost ]; then
+    echo "  Writing sudoers rule..."
+    cat > /etc/sudoers.d/ghost << SUDOERS
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/panic_shutdown.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/nuclear_wipe.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/mac_randomize.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/identity_randomize.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/tor_enable.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/tor_disable.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/kill_av.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/wipe_logs.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/leak_test.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/metadata_wipe.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/wifi_forget.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/mount_vault.sh
+${BUILD_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff
+${BUILD_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff --force --force
+${BUILD_USER} ALL=(ALL) NOPASSWD: /sbin/poweroff
+SUDOERS
+    chmod 440 /etc/sudoers.d/ghost
+    echo "  Sudoers rule written."
 fi
+
+# Autostart .desktop so xbindkeys launches on every login
+AUTOSTART_DIR="$USER_HOME/.config/autostart"
+mkdir -p "$AUTOSTART_DIR"
+cat > "$AUTOSTART_DIR/ghost-xbindkeys.desktop" << DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Ghost Machine Hotkeys
+Exec=xbindkeys
+Hidden=false
+X-GNOME-Autostart-enabled=true
+Comment=Ghost Machine hotkey daemon
+DESKTOP
+chown "$BUILD_USER" "$AUTOSTART_DIR/ghost-xbindkeys.desktop"
+
+# .xprofile fallback for bare WMs
+grep -q "xbindkeys" "$USER_HOME/.xprofile" 2>/dev/null ||     echo "xbindkeys &" >> "$USER_HOME/.xprofile" 2>/dev/null || true
+
+# Start xbindkeys now in the user's session
+echo "  Starting xbindkeys..."
+pkill -x xbindkeys 2>/dev/null; sleep 0.3
+DISPLAY=:0 XAUTHORITY="$USER_HOME/.Xauthority" sudo -u "$BUILD_USER" xbindkeys 2>/dev/null &&     echo "  ✅ xbindkeys running — hotkeys active now." ||     echo "  ℹ️  xbindkeys will start on next login (autostart configured)."
 
 # ═════════════════════════════════════════════════════════════
 # Summary
