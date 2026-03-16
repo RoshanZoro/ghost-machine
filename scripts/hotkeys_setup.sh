@@ -52,10 +52,10 @@ cat > "$HOME/.xbindkeysrc" << XBRC
   Mod4+F4
 
 "xterm -title 'Ghost: Tor ON' -bg black -fg green -fa Monospace -fs 11 -e bash -c 'sudo ${GHOST}/tor_enable.sh; read -p \"Press Enter to close...\"'"
-  Mod4+F5
+  Mod4+shift+F5
 
 "xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -fa Monospace -fs 11 -e bash -c 'sudo ${GHOST}/tor_disable.sh; read -p \"Press Enter to close...\"'"
-  Mod4+F6
+  Mod4+shift+F6
 
 "xterm -title 'Ghost: AV Kill' -bg black -fg red -fa Monospace -fs 11 -e bash -c 'sudo ${GHOST}/kill_av.sh; read -p \"Press Enter to close...\"'"
   Mod4+F7

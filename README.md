@@ -629,8 +629,8 @@ bindsym $mod+F1  exec --no-startup-id pkexec /opt/ghost/scripts/panic_shutdown.s
 bindsym $mod+F2  exec --no-startup-id pkexec /opt/ghost/scripts/nuclear_wipe.sh
 bindsym $mod+F3  exec --no-startup-id pkexec /opt/ghost/scripts/mac_randomize.sh
 bindsym $mod+F4  exec --no-startup-id pkexec /opt/ghost/scripts/identity_randomize.sh
-bindsym $mod+F5  exec --no-startup-id pkexec /opt/ghost/scripts/tor_enable.sh
-bindsym $mod+F6  exec --no-startup-id pkexec /opt/ghost/scripts/tor_disable.sh
+bindsym $mod+shift+F5  exec --no-startup-id pkexec /opt/ghost/scripts/tor_enable.sh
+bindsym $mod+shift+F6  exec --no-startup-id pkexec /opt/ghost/scripts/tor_disable.sh
 bindsym $mod+F7  exec --no-startup-id pkexec /opt/ghost/scripts/kill_av.sh
 bindsym $mod+F8  exec --no-startup-id pkexec /opt/ghost/scripts/wipe_logs.sh
 bindsym $mod+F9  exec --no-startup-id pkexec /opt/ghost/scripts/leak_test.sh
