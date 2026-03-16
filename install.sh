@@ -390,11 +390,10 @@ if pacman -Qi dnscrypt-proxy &>/dev/null; then
 fi
 
 # ═════════════════════════════════════════════════════════════
-# 12. Hotkeys (auto-detect DE and configure)
-# ═════════════════════════════════════════════════════════════
-# 12. Hotkeys — write .xbindkeysrc and start xbindkeys as desktop user
-#     hotkeys_setup.sh refuses to run as root, so we must drop privileges.
-#     We also write .xbindkeysrc directly here as a guaranteed fallback.
+# 12. Hotkeys — write files as desktop user, autostart on login
+#     xbindkeys CANNOT be started from this root installer session.
+#     We write all the files here; xbindkeys starts automatically
+#     on the user's next login via the autostart .desktop entry.
 # ═════════════════════════════════════════════════════════════
 echo ""
 echo "→ Configuring hotkeys for $BUILD_USER..."
@@ -402,55 +401,51 @@ echo "→ Configuring hotkeys for $BUILD_USER..."
 USER_HOME=$(eval echo "~$BUILD_USER")
 GHOST_DIR="$INSTALL_DIR"
 
-# Write the correct .xbindkeysrc directly (Mod4 = Super/Windows key)
-# This bypasses hotkeys_setup.sh entirely for the file-write step
-echo "  Writing $USER_HOME/.xbindkeysrc..."
+# Write .xbindkeysrc with correct Mod4 key names and Monospace font
 cat > "$USER_HOME/.xbindkeysrc" << XBRC
-# Ghost Machine hotkeys
-# Mod4 = Super (Windows) key
+# Ghost Machine hotkeys — Mod4 = Super/Windows key
 
 "sudo ${GHOST_DIR}/panic_shutdown.sh"
   Mod4+F1
 
-"xterm -title 'GHOST NUKE' -bg black -fg red -e sudo ${GHOST_DIR}/nuclear_wipe.sh"
+"xterm -title 'GHOST NUKE' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/nuclear_wipe.sh"
   Mod4+F2
 
-"xterm -title 'Ghost: MAC' -bg black -fg green -e sudo ${GHOST_DIR}/mac_randomize.sh"
+"xterm -title 'Ghost: MAC' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mac_randomize.sh"
   Mod4+F3
 
-"xterm -title 'Ghost: Identity' -bg black -fg cyan -e sudo ${GHOST_DIR}/identity_randomize.sh"
+"xterm -title 'Ghost: Identity' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/identity_randomize.sh"
   Mod4+F4
 
-"xterm -title 'Ghost: Tor ON' -bg black -fg green -e sudo ${GHOST_DIR}/tor_enable.sh"
+"xterm -title 'Ghost: Tor ON' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_enable.sh"
   Mod4+F5
 
-"xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -e sudo ${GHOST_DIR}/tor_disable.sh"
+"xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_disable.sh"
   Mod4+F6
 
-"xterm -title 'Ghost: AV Kill' -bg black -fg red -e sudo ${GHOST_DIR}/kill_av.sh"
+"xterm -title 'Ghost: AV Kill' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/kill_av.sh"
   Mod4+F7
 
-"xterm -title 'Ghost: Wipe' -bg black -fg magenta -e sudo ${GHOST_DIR}/wipe_logs.sh"
+"xterm -title 'Ghost: Wipe' -bg black -fg magenta -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wipe_logs.sh"
   Mod4+F8
 
-"xterm -title 'Ghost: Leak Test' -bg black -fg cyan -e sudo ${GHOST_DIR}/leak_test.sh"
+"xterm -title 'Ghost: Leak Test' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/leak_test.sh"
   Mod4+F9
 
-"xterm -title 'Ghost: Metadata' -bg black -fg yellow -e sudo ${GHOST_DIR}/metadata_wipe.sh ${USER_HOME}"
+"xterm -title 'Ghost: Metadata' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/metadata_wipe.sh ${USER_HOME}"
   Mod4+F10
 
-"xterm -title 'Ghost: WiFi Forget' -bg black -fg red -e sudo ${GHOST_DIR}/wifi_forget.sh"
+"xterm -title 'Ghost: WiFi Forget' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wifi_forget.sh"
   Mod4+F11
 
-"xterm -title 'Ghost: Vault' -bg black -fg cyan -e sudo ${GHOST_DIR}/mount_vault.sh"
+"xterm -title 'Ghost: Vault' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mount_vault.sh"
   Mod4+F12
 XBRC
 chown "$BUILD_USER" "$USER_HOME/.xbindkeysrc"
-echo "  Written."
+echo "  .xbindkeysrc written."
 
-# Write sudoers rule so hotkeys run without password prompt
+# sudoers: ghost scripts run without password prompt
 if [ ! -f /etc/sudoers.d/ghost ]; then
-    echo "  Writing sudoers rule..."
     cat > /etc/sudoers.d/ghost << SUDOERS
 ${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/panic_shutdown.sh
 ${BUILD_USER} ALL=(ALL) NOPASSWD: ${GHOST_DIR}/nuclear_wipe.sh
@@ -469,10 +464,10 @@ ${BUILD_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff --force --force
 ${BUILD_USER} ALL=(ALL) NOPASSWD: /sbin/poweroff
 SUDOERS
     chmod 440 /etc/sudoers.d/ghost
-    echo "  Sudoers rule written."
+    echo "  sudoers rule written."
 fi
 
-# Autostart .desktop so xbindkeys launches on every login
+# XFCE autostart .desktop — starts xbindkeys on every login automatically
 AUTOSTART_DIR="$USER_HOME/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
 cat > "$AUTOSTART_DIR/ghost-xbindkeys.desktop" << DESKTOP
@@ -484,29 +479,14 @@ Hidden=false
 X-GNOME-Autostart-enabled=true
 Comment=Ghost Machine hotkey daemon
 DESKTOP
-chown "$BUILD_USER" "$AUTOSTART_DIR/ghost-xbindkeys.desktop"
+chown -R "$BUILD_USER" "$AUTOSTART_DIR"
 
-# .xprofile fallback for bare WMs
+# .xprofile fallback
 grep -q "xbindkeys" "$USER_HOME/.xprofile" 2>/dev/null ||     echo "xbindkeys &" >> "$USER_HOME/.xprofile" 2>/dev/null || true
 
-# Start xbindkeys now in the user's session
-echo "  Starting xbindkeys..."
-pkill -x xbindkeys 2>/dev/null; sleep 0.3
-
-# Find correct XAUTHORITY — Manjaro uses random path under /run/user/
-USER_UID=$(id -u "$BUILD_USER")
-REAL_XAUTH=$(find /run/user/${USER_UID}/ -name "xauth*" 2>/dev/null | head -1)
-[ -z "$REAL_XAUTH" ] && REAL_XAUTH="$USER_HOME/.Xauthority"
-
-DISPLAY=:0 XAUTHORITY="$REAL_XAUTH" sudo -u "$BUILD_USER" xbindkeys 2>/dev/null
-sleep 1
-if sudo -u "$BUILD_USER" pgrep -x xbindkeys > /dev/null 2>&1; then
-    echo "  ✅ xbindkeys running — hotkeys active now."
-else
-    echo "  ℹ️  Could not start xbindkeys from installer (needs live X session)."
-    echo "  ℹ️  Hotkeys will activate on next login via autostart."
-    echo "  ℹ️  Or run now as $BUILD_USER (not root): xbindkeys"
-fi
+echo "  Autostart configured."
+echo "  ✅ Hotkeys will start automatically on next login."
+echo "  ℹ️  To activate NOW without rebooting, run as $BUILD_USER: xbindkeys"
 
 # ═════════════════════════════════════════════════════════════
 # Summary
