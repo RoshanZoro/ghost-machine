@@ -1,6 +1,6 @@
 # 🕵️ Ghost Machine — Lenovo T420 Manjaro OPSEC Suite
 
-> **Full anonymization, panic response, and identity rotation scripts for Manjaro Linux on a Lenovo ThinkPad T420.**
+> **Full anonymization, panic response, identity rotation, intrusion detection, and anti-forensics scripts for Manjaro Linux on a Lenovo ThinkPad T420.**
 
 ---
 
@@ -18,15 +18,26 @@ These scripts are for **legal security research, penetration testing, privacy pr
 - [Hostname Randomization](#2-hostname-randomization)
 - [Panic Button — Immediate Shutdown](#3-panic-button--immediate-shutdown)
 - [Idle Auto-Shutdown (2 Hours)](#4-idle-auto-shutdown-2-hours)
-- [Nuclear Wipe Panic Button](#5-nuclear-wipe-panic-button-rm--rf-)
+- [Nuclear Wipe Panic Button](#5-nuclear-wipe-panic-button)
 - [Tor Routing & DNS Leak Prevention](#6-tor-routing--dns-leak-prevention)
 - [RAM Wipe on Shutdown](#7-ram-wipe-on-shutdown)
-- [USB Guard — Auto-Block Unknown Devices](#8-usbguard--auto-block-unknown-devices)
+- [USBGuard — Auto-Block Unknown Devices](#8-usbguard--auto-block-unknown-devices)
 - [Webcam & Mic Hardware Kill](#9-webcam--mic-hardware-kill)
-- [LUKS Full Disk Encryption Setup](#10-luks-full-disk-encryption)
+- [LUKS Full Disk Encryption](#10-luks-full-disk-encryption)
 - [Secure Boot & Firmware Hardening](#11-secure-boot--firmware-hardening)
 - [Network Lockdown](#12-network-lockdown)
 - [Log & Temp File Wiper](#13-log--temp-file-wiper)
+- [DNS Hardening with dnscrypt-proxy](#14-dns-hardening-with-dnscrypt-proxy)
+- [Leak Test Suite](#15-leak-test-suite)
+- [WiFi Auto-Forget](#16-wifi-auto-forget)
+- [Metadata Wiper](#17-metadata-wiper)
+- [Intrusion Detection — AIDE + auditd](#18-intrusion-detection--aide--auditd)
+- [Tripwire — Real-Time File Watcher](#19-tripwire--real-time-file-watcher)
+- [Identity Fingerprint Randomizer](#20-identity-fingerprint-randomizer)
+- [Encrypted Swap](#21-encrypted-swap)
+- [Browser Hardening](#22-browser-hardening)
+- [Physical Tamper Detection](#23-physical-tamper-detection)
+- [Self Port Scan](#24-self-port-scan)
 - [Keyboard Shortcut Setup](#keyboard-shortcut-setup)
 - [Cron & Systemd Scheduling](#cron--systemd-scheduling)
 - [File Structure](#file-structure)
@@ -40,7 +51,7 @@ These scripts are for **legal security research, penetration testing, privacy pr
 | Hardware | Lenovo ThinkPad T420 |
 | OS | Manjaro Linux (rolling) |
 | Init system | systemd |
-| Shell | bash / zsh |
+| Shell | bash |
 | Network manager | NetworkManager |
 
 ---
@@ -52,25 +63,11 @@ These scripts are for **legal security research, penetration testing, privacy pr
 git clone https://github.com/youruser/ghost-machine.git
 cd ghost-machine
 
-# Install all dependencies
-sudo pacman -S --needed \
-  macchanger \
-  tor \
-  torsocks \
-  usbguard \
-  bleachbit \
-  xautolock \
-  inotify-tools \
-  procps-ng \
-  util-linux \
-  coreutils
-
-# Make all scripts executable
-chmod +x scripts/*.sh
-
 # Run the master installer
 sudo bash install.sh
 ```
+
+The installer handles all dependencies, copies scripts, enables systemd services, applies kernel hardening, and configures the firewall.
 
 ---
 
@@ -78,887 +75,589 @@ sudo bash install.sh
 
 Randomizes your MAC address every hour with an additional random ±15 minute jitter so traffic patterns are harder to correlate.
 
-### `scripts/mac_randomize.sh`
+**Scripts:** `mac_randomize.sh`, `mac_scheduler.sh`
+**Service:** `systemd/mac-randomize.service`
 
 ```bash
-#!/bin/bash
-# mac_randomize.sh — Randomize MAC address with jitter
-# Run as root via systemd timer
-
-LOG="/var/log/ghost/mac_changes.log"
-mkdir -p /var/log/ghost
-
-# Detect all physical network interfaces (skip loopback)
-INTERFACES=$(ip link show | awk -F': ' '/^[0-9]+: [^lo]/{print $2}' | sed 's/@.*//')
-
-for IFACE in $INTERFACES; do
-    # Bring interface down
-    ip link set "$IFACE" down 2>/dev/null || continue
-
-    # Randomize MAC
-    macchanger -r "$IFACE" > /dev/null 2>&1
-
-    # Get new MAC for logging
-    NEW_MAC=$(macchanger -s "$IFACE" | awk '/Current/{print $3}')
-
-    # Bring interface back up
-    ip link set "$IFACE" up 2>/dev/null
-
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $IFACE → $NEW_MAC" >> "$LOG"
-    echo "MAC randomized: $IFACE → $NEW_MAC"
-done
-
-# Restart NetworkManager to reconnect cleanly
-systemctl restart NetworkManager
-sleep 3
-echo "NetworkManager restarted."
-```
-
-### `scripts/mac_scheduler.sh`
-
-```bash
-#!/bin/bash
-# mac_scheduler.sh — Loop with hourly ± random jitter (runs as a daemon)
-
-while true; do
-    # Base interval: 3600s (1 hour)
-    BASE=3600
-    # Jitter: ±900s (±15 minutes)
-    JITTER=$(( (RANDOM % 1800) - 900 ))
-    SLEEP_TIME=$(( BASE + JITTER ))
-
-    echo "[$(date)] Next MAC rotation in ${SLEEP_TIME}s"
-    sleep "$SLEEP_TIME"
-
-    bash /opt/ghost/scripts/mac_randomize.sh
-done
-```
-
-### Systemd Service: `/etc/systemd/system/mac-randomize.service`
-
-```ini
-[Unit]
-Description=MAC Address Randomizer with Jitter
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/opt/ghost/scripts/mac_scheduler.sh
-Restart=always
-RestartSec=10
-User=root
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-# Enable and start
-sudo systemctl enable --now mac-randomize.service
+# Rotate MAC immediately
+sudo bash /opt/ghost/scripts/mac_randomize.sh
 
 # Check logs
-journalctl -u mac-randomize.service -f
+tail -f /var/log/ghost/mac_changes.log
 ```
+
+The scheduler runs as a persistent daemon. Each cycle:
+1. Brings down each interface
+2. Applies a random MAC via `macchanger -r`
+3. Brings the interface back up
+4. Restarts NetworkManager
+5. Sleeps for 3600s ± 900s before repeating
 
 ---
 
 ## 2. Hostname Randomization
 
-Generates a random plausible-looking hostname and applies it immediately without reboot.
+Generates a random plausible-looking hostname (`silent-relay-0847`, `dark-node-3312`) and applies it live without a reboot.
 
-### `scripts/hostname_randomize.sh`
-
-```bash
-#!/bin/bash
-# hostname_randomize.sh — Set a random believable hostname
-
-# Word lists for generating realistic-looking hostnames
-ADJECTIVES=(dark quiet empty broken silent dead cold fast hollow remote)
-NOUNS=(node station server relay box unit terminal endpoint bridge mesh)
-COLORS=(black grey silver carbon slate cobalt onyx ash bone chrome)
-
-# Pick random parts
-ADJ=${ADJECTIVES[$RANDOM % ${#ADJECTIVES[@]}]}
-NOUN=${NOUNS[$RANDOM % ${#NOUNS[@]}]}
-NUM=$(printf '%04d' $((RANDOM % 9999)))
-
-NEW_HOSTNAME="${ADJ}-${NOUN}-${NUM}"
-
-# Apply hostname
-hostnamectl set-hostname "$NEW_HOSTNAME"
-
-# Update /etc/hosts to prevent sudo delays
-sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts
-
-# Update mDNS/avahi if running
-if systemctl is-active avahi-daemon > /dev/null 2>&1; then
-    systemctl restart avahi-daemon
-fi
-
-echo "[$(date)] Hostname changed → $NEW_HOSTNAME"
-echo "$NEW_HOSTNAME" >> /var/log/ghost/hostname_history.log
-```
+**Script:** `hostname_randomize.sh`
 
 ```bash
-# Run manually
 sudo bash /opt/ghost/scripts/hostname_randomize.sh
-
-# Or add to mac_randomize.sh for combined rotation
 ```
+
+Also rotates automatically every 6 hours via cron. History logged to `/var/log/ghost/hostname_history.log`.
 
 ---
 
 ## 3. Panic Button — Immediate Shutdown
 
-One keypress triggers an **immediate forced power-off** — no sync, no graceful unmount. Gone in under a second.
+One keypress triggers an **immediate forced power-off** via kernel SysRq — no sync, no graceful unmount, no delay.
 
-### `scripts/panic_shutdown.sh`
-
-```bash
-#!/bin/bash
-# panic_shutdown.sh — Immediate forced power cut
-# Assign to a hotkey (see Keyboard Shortcut Setup)
-
-# Optional: sync first if you have 200ms to spare
-# sync
-
-# Force immediate power-off via SysRq (kernel-level, bypasses everything)
-echo 1 > /proc/sys/kernel/sysrq
-echo o > /proc/sysrq-trigger
-
-# Fallback: systemd forced poweroff
-systemctl poweroff --force --force
-
-# Nuclear fallback
-/sbin/poweroff -f
-```
-
-### SysRq-Based Instant Wipe Combo
-
-The Linux **SysRq REISUB** sequence is your friend. For immediate shutdown:
+**Script:** `panic_shutdown.sh`
 
 ```bash
-# Enable SysRq permanently
-echo "kernel.sysrq = 1" >> /etc/sysctl.d/99-ghost.conf
-sysctl -p /etc/sysctl.d/99-ghost.conf
+# Assign Super+F1 to:
+sudo bash /opt/ghost/scripts/panic_shutdown.sh
 ```
 
-| Key Combo | Action |
-|-----------|--------|
+Uses `echo o > /proc/sysrq-trigger` — this is kernel-level and executes in under a second, bypassing all userspace.
+
+**SysRq manual combos:**
+
+| Combo | Action |
+|-------|--------|
 | `Alt+SysRq+S` | Emergency sync |
-| `Alt+SysRq+U` | Remount all filesystems read-only |
+| `Alt+SysRq+U` | Remount all read-only |
 | `Alt+SysRq+O` | Immediate power off |
 
 ---
 
 ## 4. Idle Auto-Shutdown (2 Hours)
 
-Monitors for 2 hours of complete inactivity (no keyboard, mouse, or CPU usage). If the machine goes cold, it shuts down.
+Monitors X11 idle time and CPU usage. If both remain below threshold for 2 hours, the machine shuts down.
 
-### `scripts/idle_shutdown.sh`
-
-```bash
-#!/bin/bash
-# idle_shutdown.sh — Shutdown after 2 hours of idle
-# Checks X11 idle time via xprintidle, with CPU usage fallback
-
-IDLE_THRESHOLD=7200      # 2 hours in seconds
-CHECK_INTERVAL=60        # Check every 60 seconds
-CPU_THRESHOLD=5          # % CPU usage — below this counts as idle
-LOG="/var/log/ghost/idle_shutdown.log"
-
-mkdir -p /var/log/ghost
-
-echo "[$(date)] Idle watchdog started. Threshold: ${IDLE_THRESHOLD}s" >> "$LOG"
-
-# Install xprintidle if not present
-command -v xprintidle &>/dev/null || pacman -S --noconfirm xprintidle
-
-while true; do
-    sleep "$CHECK_INTERVAL"
-
-    # X11 idle time in milliseconds
-    if command -v xprintidle &>/dev/null && [ -n "$DISPLAY" ]; then
-        X_IDLE_MS=$(DISPLAY=:0 xprintidle 2>/dev/null || echo 0)
-        X_IDLE_S=$(( X_IDLE_MS / 1000 ))
-    else
-        X_IDLE_S=0
-    fi
-
-    # CPU usage over last interval
-    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1 | cut -d'.' -f1)
-    CPU_USAGE=${CPU_USAGE:-0}
-
-    echo "[$(date)] X idle: ${X_IDLE_S}s | CPU: ${CPU_USAGE}%" >> "$LOG"
-
-    # Only shutdown if BOTH X idle threshold met AND CPU is quiet
-    if [ "$X_IDLE_S" -ge "$IDLE_THRESHOLD" ] && [ "$CPU_USAGE" -lt "$CPU_THRESHOLD" ]; then
-        echo "[$(date)] ⚠️  IDLE THRESHOLD REACHED — shutting down" >> "$LOG"
-        wall "GHOST: Idle timeout reached. Shutting down in 30 seconds."
-        sleep 30
-        systemctl poweroff --force
-    fi
-done
-```
-
-### Systemd Service: `/etc/systemd/system/idle-shutdown.service`
-
-```ini
-[Unit]
-Description=Idle Auto-Shutdown (2h)
-After=graphical.target
-
-[Service]
-Type=simple
-ExecStart=/opt/ghost/scripts/idle_shutdown.sh
-Restart=always
-RestartSec=30
-Environment=DISPLAY=:0
-User=root
-
-[Install]
-WantedBy=graphical.target
-```
+**Script:** `idle_shutdown.sh`
+**Service:** `systemd/idle-shutdown.service`
 
 ```bash
-sudo systemctl enable --now idle-shutdown.service
+sudo systemctl status idle-shutdown.service
+tail -f /var/log/ghost/idle_shutdown.log
 ```
+
+Both conditions must be met simultaneously: X idle ≥ 7200s AND CPU usage < 5%. This prevents shutdown during unattended downloads or builds.
 
 ---
 
-## 5. Nuclear Wipe Panic Button (`rm -rf /`)
+## 5. Nuclear Wipe Panic Button
 
-> **⚠️ PERMANENT AND IRREVERSIBLE. This destroys ALL data on the system. There is NO recovery. Use only if capture/compromise is imminent.**
+> **⚠️ PERMANENT AND IRREVERSIBLE. This destroys ALL data on the system. There is NO recovery.**
 
-This script listens for **3 rapid successive keypresses** of the configured hotkey. On the third press within a 5-second window, it triggers a full filesystem wipe.
+Press the assigned hotkey **3 times within 5 seconds** to trigger. Runs `shred` on key directories before `rm -rf /` for forensic resistance. Optional LUKS header erasure (most effective — see script comments).
 
-### `scripts/nuclear_wipe.sh`
+**Script:** `nuclear_wipe.sh`
 
 ```bash
-#!/bin/bash
-# nuclear_wipe.sh — Triple-press trigger for full filesystem wipe
-# IRREVERSIBLE. All data is permanently destroyed.
-
-TRIGGER_FILE="/tmp/.ghost_nuke_trigger"
-PRESS_LOG="/tmp/.ghost_nuke_presses"
-WINDOW=5       # seconds between presses to count as a sequence
-REQUIRED=3     # number of presses required
-
-NOW=$(date +%s)
-
-# Read existing press timestamps
-touch "$PRESS_LOG"
-mapfile -t PRESSES < "$PRESS_LOG"
-
-# Filter presses within the time window
-RECENT=()
-for T in "${PRESSES[@]}"; do
-    if [ $(( NOW - T )) -le $WINDOW ]; then
-        RECENT+=("$T")
-    fi
-done
-
-# Add current press
-RECENT+=("$NOW")
-printf '%s\n' "${RECENT[@]}" > "$PRESS_LOG"
-
-COUNT=${#RECENT[@]}
-echo "Nuke button pressed. Count: $COUNT / $REQUIRED"
-
-if [ "$COUNT" -ge "$REQUIRED" ]; then
-    # Clear the press log immediately
-    rm -f "$PRESS_LOG"
-
-    # POINT OF NO RETURN — visual confirmation
-    notify-send "⚠️ GHOST NUKE" "TRIGGERED — wiping in 3 seconds" 2>/dev/null || true
-    sleep 3
-
-    # Overwrite key system directories before rm
-    # This makes forensic recovery significantly harder
-    for DIR in /home /root /etc /var /tmp /opt; do
-        find "$DIR" -type f -exec shred -fuz {} \; 2>/dev/null &
-    done
-
-    # Wipe LUKS header if encrypted (renders disk unreadable even with password)
-    # Uncomment and set your device — this alone makes the disk permanently unreadable
-    # cryptsetup erase /dev/sda 2>/dev/null &
-
-    # Kill all processes to prevent writes
-    for PID in $(ps aux | awk '{print $2}' | tail -n +2); do
-        kill -9 "$PID" 2>/dev/null
-    done
-
-    # The final wipe
-    rm -rf --no-preserve-root / 2>/dev/null
-
-    # If still alive somehow, force poweroff
-    echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
-    echo o > /proc/sysrq-trigger 2>/dev/null
-    systemctl poweroff --force --force
-fi
+# Assign Super+F2 to:
+sudo bash /opt/ghost/scripts/nuclear_wipe.sh
 ```
 
-> **Security note:** `shred` + LUKS header erasure before `rm -rf /` is far more forensically secure than `rm` alone. Consider using `cryptsetup erase` on your LUKS device instead of or in addition to the `rm`.
+> **Forensics note:** `shred` + LUKS header erasure (`cryptsetup erase /dev/sda`) is far more effective than `rm -rf /` alone. Enable the LUKS line in the script for maximum effect.
 
 ---
 
 ## 6. Tor Routing & DNS Leak Prevention
 
-Force all traffic through Tor with a kill switch — if Tor goes down, traffic is blocked rather than exposed.
+Routes all traffic through Tor via iptables transparent proxy with a kill switch — if Tor drops, all traffic is **blocked** rather than exposed in plaintext.
 
-### `scripts/tor_enable.sh`
-
-```bash
-#!/bin/bash
-# tor_enable.sh — Route all traffic through Tor with iptables kill switch
-
-TOR_UID=$(id -u debian-tor 2>/dev/null || id -u tor 2>/dev/null || echo 0)
-TOR_PORT=9040
-DNS_PORT=5353
-LO_IFACE="lo"
-NON_TOR="192.168.0.0/16 10.0.0.0/8 172.16.0.0/12"
-
-echo "Enabling Tor transparent proxy with kill switch..."
-
-# Flush existing rules
-iptables -F
-iptables -t nat -F
-iptables -t mangle -F
-
-# Allow established connections
-iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-iptables -A INPUT -i "$LO_IFACE" -j ACCEPT
-
-# Allow Tor process to bypass (prevent loop)
-iptables -t nat -A OUTPUT -m owner --uid-owner "$TOR_UID" -j RETURN
-iptables -A OUTPUT -m owner --uid-owner "$TOR_UID" -j ACCEPT
-
-# Allow LAN without Tor (adjust if you want LAN through Tor too)
-for RANGE in $NON_TOR; do
-    iptables -t nat -A OUTPUT -d "$RANGE" -j RETURN
-    iptables -A OUTPUT -d "$RANGE" -j ACCEPT
-done
-
-# Redirect DNS to Tor DNS port
-iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
-iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports "$DNS_PORT"
-
-# Redirect all TCP to Tor transparent proxy
-iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports "$TOR_PORT"
-
-# KILL SWITCH: Block anything that doesn't go through Tor
-iptables -A OUTPUT -m owner --uid-owner "$TOR_UID" -j ACCEPT
-iptables -A OUTPUT -o "$LO_IFACE" -j ACCEPT
-iptables -A OUTPUT -j REJECT
-
-echo "Tor routing active. Kill switch engaged."
-systemctl start tor
-```
-
-### `scripts/tor_disable.sh`
+**Scripts:** `tor_enable.sh`, `tor_disable.sh`
+**Config:** `config/torrc.append`
 
 ```bash
-#!/bin/bash
-# tor_disable.sh — Restore normal routing
+# Enable Tor + kill switch
+sudo bash /opt/ghost/scripts/tor_enable.sh
 
-iptables -F
-iptables -t nat -F
-iptables -t mangle -F
-iptables -P INPUT ACCEPT
-iptables -P FORWARD ACCEPT
-iptables -P OUTPUT ACCEPT
-systemctl stop tor
-echo "Tor disabled. Normal routing restored."
+# Disable and restore normal routing
+sudo bash /opt/ghost/scripts/tor_disable.sh
 ```
 
-### Tor Config: `/etc/tor/torrc` additions
+**Tor config additions** (appended to `/etc/tor/torrc`):
 
 ```
-# Transparent proxy
 TransPort 9040
 DNSPort 5353
 AutomapHostsOnResolve 1
-
-# Performance
-CircuitBuildTimeout 10
-LearnCircuitBuildTimeout 0
-MaxCircuitDirtiness 600
-
-# Hardening
 SafeLogging 1
 AvoidDiskWrites 1
 ```
+
+> **Always disable IPv6** when using Tor — IPv6 traffic can bypass Tor entirely. This suite disables it at kernel level.
 
 ---
 
 ## 7. RAM Wipe on Shutdown
 
-Overwrites RAM contents during shutdown to prevent cold-boot attacks.
+Overwrites free RAM before power-off to prevent cold-boot attacks where an attacker freezes memory chips and reads residual contents.
 
-### `scripts/ram_wipe.sh`
-
-```bash
-#!/bin/bash
-# ram_wipe.sh — Overwrite free RAM on shutdown using /dev/shm stress
-
-echo "Wiping free RAM..."
-
-# Method 1: Fill memory with zeros using dd
-MEM_FREE_KB=$(grep MemFree /proc/meminfo | awk '{print $2}')
-MEM_FREE_MB=$(( MEM_FREE_KB / 1024 - 64 ))  # Leave 64MB headroom
-
-if [ "$MEM_FREE_MB" -gt 0 ]; then
-    dd if=/dev/zero of=/dev/shm/ramwipe bs=1M count="$MEM_FREE_MB" 2>/dev/null
-    sync
-    rm -f /dev/shm/ramwipe
-fi
-
-# Method 2: sdmem (secure-delete package) — more thorough
-if command -v sdmem &>/dev/null; then
-    sdmem -f -l -v
-fi
-
-echo "RAM wipe complete."
-```
-
-### Systemd Service: `/etc/systemd/system/ram-wipe.service`
-
-```ini
-[Unit]
-Description=RAM Wipe on Shutdown
-DefaultDependencies=no
-Before=shutdown.target reboot.target halt.target
-
-[Service]
-Type=oneshot
-ExecStart=/opt/ghost/scripts/ram_wipe.sh
-TimeoutStartSec=120
-
-[Install]
-WantedBy=shutdown.target halt.target reboot.target
-```
+**Script:** `ram_wipe.sh`
+**Service:** `systemd/ram-wipe.service`
 
 ```bash
-sudo pacman -S secure-delete   # provides sdmem
+# Install secure-delete for multi-pass wipe
+sudo pacman -S secure-delete
+
 sudo systemctl enable ram-wipe.service
 ```
+
+Uses `dd if=/dev/zero` for speed, then `sdmem -f -l -v` from `secure-delete` for thoroughness.
 
 ---
 
 ## 8. USBGuard — Auto-Block Unknown Devices
 
-Only pre-authorized USB devices are allowed. Any new device is automatically blocked.
+Only pre-authorized USB devices are permitted. Any new device is automatically blocked the moment it's inserted.
+
+**Script:** `usb_monitor.sh`
 
 ```bash
-# Install and configure USBGuard
-sudo pacman -S usbguard
-
-# Generate a policy from currently connected devices
+# Generate policy from currently trusted devices
 sudo usbguard generate-policy > /etc/usbguard/rules.conf
-
-# Block all new devices by default
-echo 'IPCAllowedUsers=root' >> /etc/usbguard/usbguard-daemon.conf
-
-# Enable
 sudo systemctl enable --now usbguard.service
 
-# View blocked devices
+# Live monitor with alerts
+sudo bash /opt/ghost/scripts/usb_monitor.sh
+
+# Manage devices
 sudo usbguard list-devices
-
-# Allow a specific device (get ID from list-devices output)
 sudo usbguard allow-device <ID>
-
-# Block a device
-sudo usbguard block-device <ID>
-```
-
-### `scripts/usb_monitor.sh`
-
-```bash
-#!/bin/bash
-# usb_monitor.sh — Alert and log when unknown USB is inserted
-
-usbguard watch | while read -r LINE; do
-    if echo "$LINE" | grep -q "block"; do
-        DEVICE=$(echo "$LINE" | grep -oP 'id \K[^\s]+')
-        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-        echo "[$TIMESTAMP] BLOCKED USB: $LINE" >> /var/log/ghost/usb_events.log
-        notify-send "⚠️ USB BLOCKED" "$LINE" 2>/dev/null || wall "GHOST: Unknown USB device blocked: $DEVICE"
-    fi
-done
 ```
 
 ---
 
 ## 9. Webcam & Mic Hardware Kill
 
-### Software Kill (instant toggle)
+Unloads the webcam kernel module and mutes the microphone at ALSA, PulseAudio, and PipeWire levels simultaneously.
+
+**Script:** `kill_av.sh`
 
 ```bash
-# Disable webcam
-sudo modprobe -r uvcvideo
+sudo bash /opt/ghost/scripts/kill_av.sh
 
-# Re-enable webcam  
+# Re-enable webcam
 sudo modprobe uvcvideo
 
-# Permanently disable webcam (adds to module blacklist)
-echo "blacklist uvcvideo" | sudo tee /etc/modprobe.d/disable-webcam.conf
-
-# Disable microphone
-amixer set Capture nocap
-pactl set-source-mute @DEFAULT_SOURCE@ 1
-
-# Enable mic
+# Unmute mic
 pactl set-source-mute @DEFAULT_SOURCE@ 0
 ```
 
-### `scripts/kill_av.sh`
-
-```bash
-#!/bin/bash
-# kill_av.sh — Kill webcam and mic in one shot
-
-# Unload webcam kernel module
-modprobe -r uvcvideo 2>/dev/null && echo "Webcam: OFF" || echo "Webcam: already off"
-
-# Mute microphone at ALSA level
-amixer -q set Capture nocap 2>/dev/null
-
-# Mute at PulseAudio level
-pactl set-source-mute @DEFAULT_SOURCE@ 1 2>/dev/null
-
-# Mute at PipeWire level (if using PipeWire)
-wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1 2>/dev/null
-
-echo "Audio/Video input: ALL MUTED"
-```
-
-> **Hardware kill:** The T420's ThinkPad has a physical mic mute button (Fn+F4). For the webcam, a piece of opaque tape over the lens is still the most reliable method.
+> **Hardware:** Tape over the T420 lens is still the most reliable webcam kill. The T420's `Fn+F4` physically mutes the mic at hardware level regardless of software state.
 
 ---
 
 ## 10. LUKS Full Disk Encryption
 
-> Best set up at install time. These notes are for reference or adding a second encrypted container.
+**Script:** `mount_vault.sh`
 
 ```bash
-# Create encrypted container (file-based)
-dd if=/dev/urandom of=/secure/vault.img bs=1M count=2048   # 2GB container
+# Create a 2GB encrypted vault container
+dd if=/dev/urandom of=/secure/vault.img bs=1M count=2048
 cryptsetup luksFormat /secure/vault.img
-
-# Open container
 cryptsetup luksOpen /secure/vault.img ghost_vault
-
-# Format and mount
 mkfs.ext4 /dev/mapper/ghost_vault
-mount /dev/mapper/ghost_vault /mnt/vault
 
-# Close container
-umount /mnt/vault
-cryptsetup luksClose ghost_vault
+# Open/close vault
+sudo bash /opt/ghost/scripts/mount_vault.sh
+sudo bash /opt/ghost/scripts/mount_vault.sh close
 
-# Nuke LUKS header (renders disk permanently unreadable — NO RECOVERY)
+# Permanently destroy all data (NO RECOVERY)
 # cryptsetup erase /dev/sda
-```
-
-### `scripts/mount_vault.sh`
-
-```bash
-#!/bin/bash
-# mount_vault.sh — Open and mount encrypted vault
-
-VAULT_IMG="/secure/vault.img"
-VAULT_NAME="ghost_vault"
-MOUNT_POINT="/mnt/vault"
-
-mkdir -p "$MOUNT_POINT"
-cryptsetup luksOpen "$VAULT_IMG" "$VAULT_NAME" && \
-  mount /dev/mapper/"$VAULT_NAME" "$MOUNT_POINT" && \
-  echo "Vault mounted at $MOUNT_POINT" || \
-  echo "Failed to mount vault."
 ```
 
 ---
 
 ## 11. Secure Boot & Firmware Hardening
 
-### BIOS Settings (T420 specific)
-
-Enter BIOS: `F1` at boot
+### BIOS Settings (T420 — press F1 at boot)
 
 ```
-Security → Password → Set Supervisor Password   ← REQUIRED
-Security → Security Chip → Disabled             ← prevent TPM attacks
-Security → Virtualization → Disabled            ← unless you need VMs
-Config → Network → Wake on LAN → Disabled
-Config → USB → USB UEFI BIOS Support → Disabled ← boot from USB only with password
-Security → Secure Boot → Enabled (if using UEFI)
+Security → Password → Supervisor Password   ← SET THIS FIRST
+Security → Security Chip                    → Disabled
+Config → Network → Wake on LAN              → Disabled
+Config → USB → USB UEFI BIOS Support        → Disabled
+Security → Virtualization                   → Disabled (unless needed)
 ```
 
-### Kernel Hardening: `/etc/sysctl.d/99-ghost.conf`
+### Kernel hardening: `config/99-ghost.conf`
 
-```ini
-# Disable SysRq except for specific combos (see panic_shutdown.sh)
-kernel.sysrq = 1
+Applied via `sysctl -p`. Key settings:
 
-# Prevent core dumps
-fs.suid_dumpable = 0
-kernel.core_pattern = |/bin/false
-
-# Restrict dmesg to root
-kernel.dmesg_restrict = 1
-
-# Restrict ptrace to own children
-kernel.yama.ptrace_scope = 2
-
-# Disable magic SysRq broadcast
-kernel.printk = 3 3 3 3
-
-# Network hardening
-net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv6.conf.all.disable_ipv6 = 1       # Disable IPv6 if using Tor (leaks!)
-net.ipv4.conf.all.log_martians = 1
-
-# Randomize virtual address space
-kernel.randomize_va_space = 2
-```
-
-```bash
-sudo sysctl -p /etc/sysctl.d/99-ghost.conf
-```
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `kernel.yama.ptrace_scope` | 2 | Block ptrace between unrelated processes |
+| `kernel.dmesg_restrict` | 1 | Hide dmesg from non-root |
+| `kernel.randomize_va_space` | 2 | Full ASLR |
+| `net.ipv6.conf.all.disable_ipv6` | 1 | Kill IPv6 globally |
+| `fs.suid_dumpable` | 0 | No core dumps |
 
 ---
 
 ## 12. Network Lockdown
 
-### Firewall Setup (nftables)
+### nftables firewall (`config/nftables.conf`)
 
-```bash
-sudo pacman -S nftables
-```
-
-### `/etc/nftables.conf`
-
-```nft
-#!/usr/sbin/nft -f
-
-flush ruleset
-
-table inet filter {
-    chain input {
-        type filter hook input priority 0; policy drop;
-
-        # Allow loopback
-        iifname "lo" accept
-
-        # Allow established/related
-        ct state established,related accept
-
-        # Drop invalid
-        ct state invalid drop
-
-        # Allow ICMP (optional — comment out for stealth)
-        # ip protocol icmp accept
-
-        # Drop everything else
-        drop
-    }
-
-    chain forward {
-        type filter hook forward priority 0; policy drop;
-    }
-
-    chain output {
-        type filter hook output priority 0; policy accept;
-        # Add output restrictions here when Tor kill switch is active
-    }
-}
-```
+Default-drop on all inbound. Only established/related connections accepted. Forward chain completely blocked.
 
 ```bash
 sudo systemctl enable --now nftables.service
+sudo nft list ruleset
 ```
 
-### Disable IPv6 Globally
+### Disable IPv6 at boot
 
-```bash
-# Add to /etc/default/grub GRUB_CMDLINE_LINUX
-# ipv6.disable=1
-
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-```
+Added to `GRUB_CMDLINE_LINUX`: `ipv6.disable=1`
 
 ---
 
 ## 13. Log & Temp File Wiper
 
-Clears logs, bash history, temp files, and browser artifacts.
+Securely wipes system logs, shell history, thumbnail caches, recent file lists, and browser artifacts.
 
-### `scripts/wipe_logs.sh`
-
-```bash
-#!/bin/bash
-# wipe_logs.sh — Secure wipe of logs and temp artifacts
-
-echo "Starting log wipe..."
-
-# System logs
-journalctl --vacuum-time=1s 2>/dev/null
-find /var/log -type f -name "*.log" -exec shred -fuz {} \; 2>/dev/null
-find /var/log -type f -name "*.gz" -delete 2>/dev/null
-
-# User history files
-for USER_HOME in /home/* /root; do
-    [ -d "$USER_HOME" ] || continue
-    shred -fuz "$USER_HOME/.bash_history" 2>/dev/null
-    shred -fuz "$USER_HOME/.zsh_history" 2>/dev/null
-    shred -fuz "$USER_HOME/.python_history" 2>/dev/null
-    shred -fuz "$USER_HOME/.lesshst" 2>/dev/null
-    shred -fuz "$USER_HOME/.wget-hsts" 2>/dev/null
-    ln -sf /dev/null "$USER_HOME/.bash_history" 2>/dev/null
-    ln -sf /dev/null "$USER_HOME/.zsh_history" 2>/dev/null
-done
-
-# Temp directories
-rm -rf /tmp/* /var/tmp/* 2>/dev/null
-
-# Thumbnail cache
-rm -rf ~/.cache/thumbnails/* 2>/dev/null
-
-# Recent files (GNOME/GTK)
-rm -f ~/.local/share/recently-used.xbel 2>/dev/null
-rm -rf ~/.local/share/recently-used.xbel.* 2>/dev/null
-
-# Firefox/LibreWolf artifacts
-find ~/.mozilla -name "*.sqlite" -exec sqlite3 {} "DELETE FROM moz_historyvisits;" \; 2>/dev/null
-
-# BleachBit deep clean (if installed)
-if command -v bleachbit &>/dev/null; then
-    bleachbit --clean \
-        system.cache \
-        system.tmp \
-        system.trash \
-        bash.history \
-        journald.clean \
-        thumbnails.cache 2>/dev/null
-fi
-
-echo "Log wipe complete. $(date)"
-```
+**Script:** `wipe_logs.sh`
 
 ```bash
-# Run automatically on logout — add to /etc/profile.d/wipe_on_logout.sh
-echo "bash /opt/ghost/scripts/wipe_logs.sh" >> /etc/profile.d/wipe_on_logout.sh
+sudo bash /opt/ghost/scripts/wipe_logs.sh
 ```
+
+Covers: `journalctl`, `/var/log/*.log`, `.bash_history`, `.zsh_history`, `/tmp`, `/var/tmp`, thumbnail caches, `recently-used.xbel`, Firefox/LibreWolf SQLite history. Uses `shred` for overwrite before deletion. Symlinks history files to `/dev/null` to prevent future writes.
+
+---
+
+## 14. DNS Hardening with dnscrypt-proxy
+
+Encrypts all DNS queries using DNS-over-HTTPS. Prevents DNS leaks even when Tor is not active. Makes `/etc/resolv.conf` immutable so NetworkManager cannot override it.
+
+**Script:** `dns_hardening.sh`
+
+```bash
+sudo bash /opt/ghost/scripts/dns_hardening.sh
+```
+
+**What it does:**
+- Installs and configures `dnscrypt-proxy` on `127.0.0.1:53`
+- Enforces `require_nolog = true` — only uses no-log resolvers
+- Enables `require_dnssec = true` — validates DNS signatures
+- Sets `block_ipv6 = true` — no IPv6 DNS leaks
+- Uses `lb_strategy = p2` — randomizes resolver selection per query
+- Makes `/etc/resolv.conf` immutable with `chattr +i`
+
+```bash
+# Verify DNS is encrypted
+dig +short @127.0.0.1 example.com
+systemctl status dnscrypt-proxy
+```
+
+> **Resolvers used:** Cloudflare, Quad9, Mullvad, NextDNS — all no-log, all DoH. Edit `/etc/dnscrypt-proxy/dnscrypt-proxy.toml` to change.
+
+---
+
+## 15. Leak Test Suite
+
+Comprehensive check for DNS leaks, IPv6 leaks, Tor connectivity, open ports, and MAC address randomization status.
+
+**Script:** `leak_test.sh`
+
+```bash
+sudo bash /opt/ghost/scripts/leak_test.sh
+```
+
+**Checks performed:**
+
+| Check | What it tests |
+|-------|--------------|
+| IPv6 disabled | Kernel flag + interface addresses |
+| DNS via localhost | resolv.conf + dnscrypt-proxy running |
+| DNS resolution | Live query through 127.0.0.1 |
+| Tor active | Service status + exit node verification |
+| Open ports | `ss -tlnp` for external listeners |
+| MAC randomized | Locally-administered bit check on all interfaces |
+
+Exit code 0 = all clean. Exit code 1 = failures found. Suitable for cron or pre-session hook.
+
+---
+
+## 16. WiFi Auto-Forget
+
+Deletes all saved WiFi profiles on demand (or on shutdown). Prevents the machine from passively broadcasting known SSID probe requests.
+
+**Script:** `wifi_forget.sh`
+
+```bash
+sudo bash /opt/ghost/scripts/wifi_forget.sh
+```
+
+Clears both NetworkManager (`/etc/NetworkManager/system-connections/`) and iwd profiles (`/var/lib/iwd/`). Add to shutdown hook or run manually before moving locations.
+
+```bash
+# Add to systemd shutdown
+# ExecStop=/opt/ghost/scripts/wifi_forget.sh
+```
+
+---
+
+## 17. Metadata Wiper
+
+Strips embedded metadata (GPS, author, timestamps, device info, software version) from documents, images, and media files before sharing.
+
+**Script:** `metadata_wipe.sh`
+
+```bash
+# Wipe a single file
+bash /opt/ghost/scripts/metadata_wipe.sh document.pdf
+
+# Wipe an entire directory recursively
+bash /opt/ghost/scripts/metadata_wipe.sh ~/Documents/to_share/
+```
+
+Uses `mat2` as primary (handles PDF, DOCX, XLSX, JPG, PNG, MP4, MP3, ZIP and more) with `exiftool` as fallback. Operates in-place — no copy created.
+
+**Supported formats:** JPG, PNG, GIF, PDF, DOCX, XLSX, PPTX, ODT, MP3, MP4, MOV, ZIP, HEIC, TIFF
+
+```bash
+sudo pacman -S perl-image-exiftool
+pip install mat2 --break-system-packages
+```
+
+---
+
+## 18. Intrusion Detection — AIDE + auditd
+
+AIDE hashes all system binaries and configuration files on setup. On each check, it compares current state against the baseline and alerts on any change. `auditd` logs every privileged command and modification to sensitive files.
+
+**Script:** `intrusion_detection.sh`
+
+```bash
+# First run — initialize database (takes ~2 minutes)
+sudo bash /opt/ghost/scripts/intrusion_detection.sh setup
+
+# Daily check (also runs via cron)
+sudo bash /opt/ghost/scripts/intrusion_detection.sh check
+```
+
+**AIDE monitors:** `/boot`, `/etc`, `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/opt/ghost`
+
+**auditd rules watch:**
+- `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`
+- `/etc/NetworkManager`, `/etc/hosts`
+- `/etc/systemd/system`
+- All root command executions
+
+```bash
+# View recent audit events
+ausearch -k identity
+ausearch -k ghost_scripts
+journalctl -u auditd -f
+```
+
+---
+
+## 19. Tripwire — Real-Time File Watcher
+
+Uses `inotifywait` to watch critical paths in real time. Generates desktop notifications and wall messages the moment anything is modified. Also deploys **honeypot files** — fake credential files that trigger an alert if anything reads them.
+
+**Script:** `tripwire_watch.sh`
+**Service:** `systemd/tripwire.service` (created by `intrusion_detection.sh setup`)
+
+```bash
+# Run manually
+sudo bash /opt/ghost/scripts/tripwire_watch.sh
+
+# Or via service
+sudo systemctl status tripwire.service
+tail -f /var/log/ghost/tripwire_alerts.log
+```
+
+**Honeypot files deployed:**
+
+| File | Fake content |
+|------|-------------|
+| `/root/.aws/credentials` | Fake AWS access keys |
+| `/home/user/.ssh/id_rsa_backup` | Fake SSH private key |
+| `/root/passwords.txt` | Bait text file |
+| `/home/user/wallet.dat` | Random binary blob |
+
+Any process that reads these files triggers an immediate alert. Legitimate processes will never touch them.
+
+---
+
+## 20. Identity Fingerprint Randomizer
+
+Rotates all system-level fingerprint components: timezone, locale, clock skew, machine-id, hostname, and MAC address — in a single command.
+
+**Script:** `identity_randomize.sh`
+
+```bash
+sudo bash /opt/ghost/scripts/identity_randomize.sh
+```
+
+**What gets rotated:**
+
+| Component | Method |
+|-----------|--------|
+| Timezone | Random from curated pool via `timedatectl` |
+| Clock | ±30 second random skew |
+| Locale | Random English locale (US/GB/CA/AU) |
+| Hostname | Random adjective-noun-number |
+| MAC address | `macchanger -r` on all interfaces |
+| machine-id | New UUID written to `/etc/machine-id` |
+
+Run before sensitive sessions or add to cron for periodic rotation.
+
+---
+
+## 21. Encrypted Swap
+
+Replaces plaintext swap with a swap partition encrypted with a new random key on every boot. Without this, paged-out RAM contents land on disk in plaintext, bypassing LUKS entirely.
+
+**Script:** `encrypt_swap.sh`
+
+```bash
+sudo bash /opt/ghost/scripts/encrypt_swap.sh
+# Reboot required
+```
+
+Uses `/dev/urandom` as the key source in `/etc/crypttab` — a new random key is generated at every boot, making the swap permanently unrecoverable after shutdown even if the drive is seized.
+
+```
+# /etc/crypttab entry created:
+cryptswap  /dev/sdaX  /dev/urandom  swap,cipher=aes-xts-plain64,size=256
+```
+
+---
+
+## 22. Browser Hardening
+
+Applies `arkenfox user.js` (the most comprehensive Firefox hardening config available) plus Ghost Machine overrides, and creates a post-session wipe script.
+
+**Script:** `browser_harden.sh`
+
+```bash
+# Run as your desktop user (not root)
+bash /opt/ghost/scripts/browser_harden.sh
+```
+
+**Key settings applied:**
+
+| Setting | Effect |
+|---------|--------|
+| `privacy.resistFingerprinting` | Spoof canvas, fonts, screen size |
+| `media.peerconnection.enabled = false` | Disable WebRTC (major leak vector) |
+| `network.proxy.socks_remote_dns = true` | DNS through SOCKS proxy (Tor) |
+| `privacy.sanitize.sanitizeOnShutdown` | Wipe everything on close |
+| Spoofed User-Agent | Common Windows/Firefox string |
+| No saved passwords | Disabled at pref level |
+| No search suggestions | Prevents keylogging searches |
+
+**Manual steps after running:**
+1. Install **uBlock Origin** → enable hard mode
+2. Install **NoScript** for per-site JS control
+3. Never use the same browser profile for different identities
+4. Use **Tor Browser** for maximum anonymity sessions
+
+---
+
+## 23. Physical Tamper Detection
+
+Detects if the laptop has been physically opened by comparing webcam photos of glitter nail polish applied over BIOS screws and case seams. Each glitter pattern is unique and impossible to replicate exactly.
+
+**Script:** `tamper_detect.sh`
+
+```bash
+# Setup: apply glitter nail polish, let dry, then:
+sudo bash /opt/ghost/scripts/tamper_detect.sh setup
+
+# Check on each boot:
+sudo bash /opt/ghost/scripts/tamper_detect.sh check
+```
+
+**Physical preparation:**
+1. Apply glitter nail polish over every BIOS screw head
+2. Apply a streak across case seams and port covers
+3. Photograph under consistent lighting immediately
+4. Run `setup` to hash and store the baseline image
+5. Any disturbance to the glitter pattern changes the hash → alert
+
+> Add `tamper_detect.sh check` to your boot sequence or login script to verify integrity before each session.
+
+---
+
+## 24. Self Port Scan
+
+Runs `nmap -sV -p-` against localhost to audit your open attack surface. Compares against a saved baseline and alerts on any new open ports.
+
+**Script:** `self_scan.sh`
+
+```bash
+# Set baseline after initial hardened setup
+sudo bash /opt/ghost/scripts/self_scan.sh baseline
+
+# Check for new ports (run via cron weekly)
+sudo bash /opt/ghost/scripts/self_scan.sh
+```
+
+Any port open externally that wasn't in the baseline triggers a desktop notification and wall message. Useful for catching services that got accidentally started.
 
 ---
 
 ## Keyboard Shortcut Setup
 
-Set these in your desktop environment (XFCE, KDE, GNOME, i3):
-
 | Hotkey | Script | Action |
 |--------|--------|--------|
 | `Super+F1` | `panic_shutdown.sh` | Instant forced power-off |
-| `Super+F2` | `nuclear_wipe.sh` | Triple-press nuke trigger |
+| `Super+F2` | `nuclear_wipe.sh` | Triple-press nuclear wipe |
 | `Super+F3` | `mac_randomize.sh` | Rotate MAC now |
-| `Super+F4` | `hostname_randomize.sh` | Rotate hostname now |
-| `Super+F5` | `tor_enable.sh` | Enable Tor routing |
-| `Super+F6` | `tor_disable.sh` | Disable Tor routing |
+| `Super+F4` | `identity_randomize.sh` | Full identity rotation |
+| `Super+F5` | `tor_enable.sh` | Enable Tor + kill switch |
+| `Super+F6` | `tor_disable.sh` | Disable Tor |
 | `Super+F7` | `kill_av.sh` | Kill webcam + mic |
 | `Super+F8` | `wipe_logs.sh` | Wipe logs + history |
-
-### XFCE (`~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml`)
-
-```xml
-<property name="&lt;Super&gt;F1" type="string" value="pkexec /opt/ghost/scripts/panic_shutdown.sh"/>
-<property name="&lt;Super&gt;F2" type="string" value="pkexec /opt/ghost/scripts/nuclear_wipe.sh"/>
-<property name="&lt;Super&gt;F3" type="string" value="pkexec /opt/ghost/scripts/mac_randomize.sh"/>
-```
+| `Super+F9` | `leak_test.sh` | Run leak test suite |
+| `Super+F10` | `metadata_wipe.sh` | Wipe metadata (current dir) |
 
 ### i3 (`~/.config/i3/config`)
 
 ```
-bindsym $mod+F1 exec --no-startup-id pkexec /opt/ghost/scripts/panic_shutdown.sh
-bindsym $mod+F2 exec --no-startup-id pkexec /opt/ghost/scripts/nuclear_wipe.sh
-bindsym $mod+F3 exec --no-startup-id pkexec /opt/ghost/scripts/mac_randomize.sh
-bindsym $mod+F4 exec --no-startup-id pkexec /opt/ghost/scripts/hostname_randomize.sh
-bindsym $mod+F5 exec --no-startup-id pkexec /opt/ghost/scripts/tor_enable.sh
-bindsym $mod+F6 exec --no-startup-id pkexec /opt/ghost/scripts/tor_disable.sh
-bindsym $mod+F7 exec --no-startup-id pkexec /opt/ghost/scripts/kill_av.sh
-bindsym $mod+F8 exec --no-startup-id pkexec /opt/ghost/scripts/wipe_logs.sh
+bindsym $mod+F1  exec --no-startup-id pkexec /opt/ghost/scripts/panic_shutdown.sh
+bindsym $mod+F2  exec --no-startup-id pkexec /opt/ghost/scripts/nuclear_wipe.sh
+bindsym $mod+F3  exec --no-startup-id pkexec /opt/ghost/scripts/mac_randomize.sh
+bindsym $mod+F4  exec --no-startup-id pkexec /opt/ghost/scripts/identity_randomize.sh
+bindsym $mod+F5  exec --no-startup-id pkexec /opt/ghost/scripts/tor_enable.sh
+bindsym $mod+F6  exec --no-startup-id pkexec /opt/ghost/scripts/tor_disable.sh
+bindsym $mod+F7  exec --no-startup-id pkexec /opt/ghost/scripts/kill_av.sh
+bindsym $mod+F8  exec --no-startup-id pkexec /opt/ghost/scripts/wipe_logs.sh
+bindsym $mod+F9  exec --no-startup-id pkexec /opt/ghost/scripts/leak_test.sh
+bindsym $mod+F10 exec --no-startup-id bash /opt/ghost/scripts/metadata_wipe.sh .
 ```
 
 ---
 
 ## Cron & Systemd Scheduling
 
-```bash
-# /etc/cron.d/ghost — system-level cron jobs
-
-# Wipe logs every night at 3am
-0 3 * * * root /opt/ghost/scripts/wipe_logs.sh >> /var/log/ghost/cron.log 2>&1
-
-# Rotate hostname every 6 hours
-0 */6 * * * root /opt/ghost/scripts/hostname_randomize.sh >> /var/log/ghost/cron.log 2>&1
-
-# MAC rotation is handled by systemd service (with jitter)
 ```
+# /etc/cron.d/ghost
 
----
+# Wipe logs nightly at 3am
+0 3 * * * root /opt/ghost/scripts/wipe_logs.sh
 
-## Master Installer: `install.sh`
+# Rotate full identity every 6 hours
+0 */6 * * * root /opt/ghost/scripts/identity_randomize.sh
 
-```bash
-#!/bin/bash
-# install.sh — Deploy all ghost scripts and services
+# AIDE integrity check daily at 4am
+0 4 * * * root /opt/ghost/scripts/intrusion_detection.sh check
 
-set -e
+# Self port scan weekly (Sunday 2am)
+0 2 * * 0 root /opt/ghost/scripts/self_scan.sh
 
-INSTALL_DIR="/opt/ghost/scripts"
-mkdir -p "$INSTALL_DIR"
-mkdir -p /var/log/ghost
-
-# Copy scripts
-cp scripts/*.sh "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR"/*.sh
-
-# Install systemd services
-cp systemd/*.service /etc/systemd/system/
-systemctl daemon-reload
-
-# Enable services
-systemctl enable --now mac-randomize.service
-systemctl enable --now idle-shutdown.service
-systemctl enable ram-wipe.service
-systemctl enable usbguard.service
-
-# Apply sysctl hardening
-cp config/99-ghost.conf /etc/sysctl.d/
-sysctl -p /etc/sysctl.d/99-ghost.conf
-
-# Apply nftables firewall
-cp config/nftables.conf /etc/nftables.conf
-systemctl enable --now nftables.service
-
-# Install cron jobs
-cp config/ghost.cron /etc/cron.d/ghost
-
-# Disable IPv6
-if ! grep -q "ipv6.disable" /etc/default/grub; then
-    sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="ipv6.disable=1 /' /etc/default/grub
-    grub-mkconfig -o /boot/grub/grub.cfg
-fi
-
-echo ""
-echo "✅ Ghost Machine deployed successfully."
-echo "   Reboot recommended to apply all kernel parameters."
-echo ""
-echo "⚠️  REMINDER: Set a BIOS supervisor password on the T420."
-echo "⚠️  REMINDER: Assign hotkeys in your DE/WM config."
+# Leak test on every boot (add to rc.local or @reboot cron)
+@reboot root sleep 30 && /opt/ghost/scripts/leak_test.sh
 ```
 
 ---
@@ -970,29 +669,56 @@ ghost-machine/
 ├── README.md
 ├── install.sh
 ├── scripts/
-│   ├── mac_randomize.sh
-│   ├── mac_scheduler.sh
-│   ├── hostname_randomize.sh
-│   ├── panic_shutdown.sh
-│   ├── nuclear_wipe.sh
-│   ├── idle_shutdown.sh
-│   ├── tor_enable.sh
-│   ├── tor_disable.sh
-│   ├── ram_wipe.sh
-│   ├── kill_av.sh
-│   ├── mount_vault.sh
-│   ├── usb_monitor.sh
-│   └── wipe_logs.sh
+│   ├── mac_randomize.sh          # Rotate MAC address
+│   ├── mac_scheduler.sh          # Hourly MAC rotation daemon
+│   ├── hostname_randomize.sh     # Random hostname
+│   ├── identity_randomize.sh     # Full identity rotation (TZ, locale, machine-id)
+│   ├── panic_shutdown.sh         # Instant forced power-off
+│   ├── nuclear_wipe.sh           # Triple-press shred + rm -rf /
+│   ├── idle_shutdown.sh          # 2h idle auto-shutdown
+│   ├── tor_enable.sh             # Tor + iptables kill switch
+│   ├── tor_disable.sh            # Restore normal routing
+│   ├── dns_hardening.sh          # dnscrypt-proxy DoH setup
+│   ├── leak_test.sh              # DNS/IPv6/Tor/port leak checker
+│   ├── wifi_forget.sh            # Delete all saved WiFi profiles
+│   ├── ram_wipe.sh               # Overwrite RAM on shutdown
+│   ├── kill_av.sh                # Kill webcam + mic
+│   ├── usb_monitor.sh            # USBGuard alert daemon
+│   ├── mount_vault.sh            # LUKS vault open/close
+│   ├── wipe_logs.sh              # Wipe logs, history, caches
+│   ├── metadata_wipe.sh          # Strip file metadata (mat2/exiftool)
+│   ├── intrusion_detection.sh    # AIDE + auditd setup and check
+│   ├── tripwire_watch.sh         # inotify real-time watcher + honeypots
+│   ├── encrypt_swap.sh           # Replace swap with encrypted swap
+│   ├── browser_harden.sh         # arkenfox user.js + post-session wipe
+│   ├── tamper_detect.sh          # Glitter nail polish photo hash check
+│   └── self_scan.sh              # nmap self-audit
 ├── systemd/
 │   ├── mac-randomize.service
 │   ├── idle-shutdown.service
 │   └── ram-wipe.service
 └── config/
-    ├── 99-ghost.conf       (sysctl hardening)
-    ├── nftables.conf       (firewall)
-    ├── ghost.cron          (cron jobs)
-    └── torrc.append        (Tor configuration additions)
+    ├── 99-ghost.conf             # sysctl kernel hardening
+    ├── nftables.conf             # Default-drop firewall
+    ├── ghost.cron                # All cron jobs
+    └── torrc.append              # Tor transparent proxy config
 ```
+
+---
+
+## Quick Reference — Threat Response
+
+| Threat | Response |
+|--------|----------|
+| Someone approaching | `Super+F1` — instant power cut |
+| Device seizure imminent | `Super+F2` (×3) — nuclear wipe |
+| Unexpected USB inserted | USBGuard auto-blocks; alert fired |
+| Suspicious file change | AIDE/tripwire alert; check logs |
+| Unknown open port | self_scan.sh alert; kill the service |
+| Before sharing a file | `Super+F10` — wipe metadata |
+| Before leaving location | `wifi_forget.sh` — delete WiFi profiles |
+| Starting sensitive session | `Super+F5` Tor on → `Super+F9` leak test |
+| Ending session | `Super+F8` wipe logs + `Super+F7` kill A/V |
 
 ---
 
@@ -1000,17 +726,17 @@ ghost-machine/
 
 | Topic | Recommendation |
 |-------|---------------|
-| Browser | LibreWolf or Tor Browser — never Chromium |
-| DNS | Use `dnscrypt-proxy` with DoH/DoT, never plain DNS |
-| VPN | Mullvad (no logs, accepts cash/Monero) |
+| Browser | LibreWolf + arkenfox, Tor Browser for max anonymity |
+| DNS | dnscrypt-proxy (this suite) + Mullvad or Quad9 resolvers |
+| VPN | Mullvad (no logs, accepts Monero) — chain before Tor |
 | Payments | Monero for anything sensitive |
-| Communication | Signal (mobile), Briar (P2P), or Session |
-| Email | ProtonMail via Tor, or self-hosted with GPG |
-| 2FA | Hardware key (YubiKey), never SMS |
-| Storage | Only encrypted LUKS volumes, never unencrypted USB |
-| Updates | `sudo pacman -Syu` weekly — rolling release means fresh kernels |
-| Physical | Lock screen before stepping away; use xautolock (5 min) |
-| BIOS | Supervisor password set; boot order: internal disk only |
+| Communication | Signal, Briar (P2P mesh), or Session (no phone number) |
+| Email | ProtonMail via Tor, or GPG-encrypted with throwaway addresses |
+| 2FA | YubiKey hardware token — never SMS |
+| Storage | LUKS volumes only, never unencrypted USB |
+| Physical | Glitter nail polish on screws; privacy screen filter; Faraday bag for transit |
+| Updates | `sudo pacman -Syu` weekly — rolling release = fresh kernels |
+| BIOS | Supervisor password set; boot order locked to internal disk |
 
 ---
 
