@@ -492,7 +492,21 @@ grep -q "xbindkeys" "$USER_HOME/.xprofile" 2>/dev/null ||     echo "xbindkeys &"
 # Start xbindkeys now in the user's session
 echo "  Starting xbindkeys..."
 pkill -x xbindkeys 2>/dev/null; sleep 0.3
-DISPLAY=:0 XAUTHORITY="$USER_HOME/.Xauthority" sudo -u "$BUILD_USER" xbindkeys 2>/dev/null &&     echo "  ✅ xbindkeys running — hotkeys active now." ||     echo "  ℹ️  xbindkeys will start on next login (autostart configured)."
+
+# Find correct XAUTHORITY — Manjaro uses random path under /run/user/
+USER_UID=$(id -u "$BUILD_USER")
+REAL_XAUTH=$(find /run/user/${USER_UID}/ -name "xauth*" 2>/dev/null | head -1)
+[ -z "$REAL_XAUTH" ] && REAL_XAUTH="$USER_HOME/.Xauthority"
+
+DISPLAY=:0 XAUTHORITY="$REAL_XAUTH" sudo -u "$BUILD_USER" xbindkeys 2>/dev/null
+sleep 1
+if sudo -u "$BUILD_USER" pgrep -x xbindkeys > /dev/null 2>&1; then
+    echo "  ✅ xbindkeys running — hotkeys active now."
+else
+    echo "  ℹ️  Could not start xbindkeys from installer (needs live X session)."
+    echo "  ℹ️  Hotkeys will activate on next login via autostart."
+    echo "  ℹ️  Or run now as $BUILD_USER (not root): xbindkeys"
+fi
 
 # ═════════════════════════════════════════════════════════════
 # Summary
