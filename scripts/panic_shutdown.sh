@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # panic_shutdown.sh — Immediate forced power cut
 # Assign to a hotkey for instant emergency shutdown
 

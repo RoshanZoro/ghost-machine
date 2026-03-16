@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # dns_hardening.sh — Install and configure dnscrypt-proxy with DoH
 # Prevents DNS leaks even outside Tor
 # Run as root

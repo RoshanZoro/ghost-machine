@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # idle_shutdown.sh — Shutdown after 2 hours of complete idle
 # Monitors X11 idle time + CPU usage
 

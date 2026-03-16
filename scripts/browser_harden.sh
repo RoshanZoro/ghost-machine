@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # browser_harden.sh — Apply arkenfox user.js to Firefox/LibreWolf
 # + install uBlock Origin config
 # Run as the desktop user (not root)

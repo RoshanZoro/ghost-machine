@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # encrypt_swap.sh — Replace plaintext swap with encrypted swap
 # Prevents RAM contents from landing on disk in plaintext
 # Run once as root — WILL disable existing swap temporarily

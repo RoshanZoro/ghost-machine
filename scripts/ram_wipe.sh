@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # ram_wipe.sh — Overwrite free RAM on shutdown to prevent cold-boot attacks
 
 echo "Wiping free RAM..."

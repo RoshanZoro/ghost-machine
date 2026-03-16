@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # metadata_wipe.sh — Strip metadata from files before exfil or sharing
 # Uses mat2 (primary) and exiftool (fallback)
 # Usage: bash metadata_wipe.sh <file_or_directory>

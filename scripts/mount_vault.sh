@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # mount_vault.sh — Open and mount an encrypted LUKS vault container
 
 VAULT_IMG="/secure/vault.img"

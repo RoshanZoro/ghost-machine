@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # tor_disable.sh — Restore normal routing, disable Tor
 
 iptables -F

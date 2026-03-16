@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # mac_randomize.sh — Randomize MAC address with jitter
 # Run as root via systemd timer
 

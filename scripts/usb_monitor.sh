@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # usb_monitor.sh — Alert and log when unknown USB devices are blocked by USBGuard
 # Requires usbguard to be running
 

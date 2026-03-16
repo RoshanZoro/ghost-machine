@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # wipe_logs.sh — Secure wipe of logs, history, temp files, and browser artifacts
 
 echo "[$(date)] Starting log wipe..."

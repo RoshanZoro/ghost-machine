@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # hostname_randomize.sh — Set a random believable hostname
 
 ADJECTIVES=(dark quiet empty broken silent dead cold fast hollow remote amber obsidian crimson static phantom null void buried drifting)

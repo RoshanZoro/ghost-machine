@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # mac_scheduler.sh — Loop with hourly ± random jitter (runs as a daemon)
 
 while true; do

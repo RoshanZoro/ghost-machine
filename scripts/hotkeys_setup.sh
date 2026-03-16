@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # hotkeys_setup.sh — Ghost Machine hotkeys
 # Run as normal user (NOT sudo): bash hotkeys_setup.sh
 

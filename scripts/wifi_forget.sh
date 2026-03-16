@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # wifi_forget.sh — Delete all saved WiFi profiles on shutdown
 # Prevents your machine broadcasting known SSIDs passively
 # Also randomizes wifi MAC before any new connection

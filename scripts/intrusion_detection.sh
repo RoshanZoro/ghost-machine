@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # intrusion_detection.sh — Setup and run AIDE + auditd filesystem integrity checks
 # AIDE: hashes all system binaries and alerts on changes
 # Run setup once, then check daily via cron

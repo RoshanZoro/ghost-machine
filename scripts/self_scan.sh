@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # self_scan.sh — Run nmap against localhost to audit open attack surface
 # Alerts if any unexpected ports are open
 # Run manually or via cron

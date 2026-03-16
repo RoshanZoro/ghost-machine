@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # nuclear_wipe.sh — Triple-press trigger for full filesystem wipe
 # ⚠️  IRREVERSIBLE. All data is permanently destroyed. No recovery possible.
 # Press the assigned hotkey 3 times within 5 seconds to trigger.

@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # tor_enable.sh — Route all traffic through Tor with iptables kill switch
 # If Tor drops, all traffic is blocked rather than exposed
 

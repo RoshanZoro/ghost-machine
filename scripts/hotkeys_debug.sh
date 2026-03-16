@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # hotkeys_debug.sh — diagnose why xbindkeys won't start
 # Run as desktop user: bash hotkeys_debug.sh
 

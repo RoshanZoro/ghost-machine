@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # tamper_detect.sh — Physical tamper detection using camera hash comparison
 # On setup: photograph the glitter nail polish on screws/ports, store hash
 # On boot: re-photograph and compare — alert if pattern changed

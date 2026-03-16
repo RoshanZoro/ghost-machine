@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # leak_test.sh — Test for DNS, IPv6, and WebRTC leaks
 # Run before any sensitive session
 

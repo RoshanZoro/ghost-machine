@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # kill_av.sh — Instantly disable webcam and all microphone inputs
 
 # Unload webcam kernel module

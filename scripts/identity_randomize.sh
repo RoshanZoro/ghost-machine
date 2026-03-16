@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # identity_randomize.sh — Randomize system fingerprint components
 # Covers: timezone, locale, hostname (calls hostname_randomize.sh),
 #         kernel version string spoofing, and system clock skew

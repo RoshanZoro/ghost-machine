@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$HOME" 2>/dev/null || cd /tmp
 # tripwire_watch.sh — Real-time inotify watcher on critical system paths
 # Runs as a daemon via systemd tripwire.service
 # Alerts instantly when watched files are accessed or modified
