@@ -408,37 +408,37 @@ cat > "$USER_HOME/.xbindkeysrc" << XBRC
 "sudo ${GHOST_DIR}/panic_shutdown.sh"
   Mod4+F1
 
-"xterm -title 'GHOST NUKE' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/nuclear_wipe.sh"
+"cd /tmp && xterm -title 'GHOST NUKE' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/nuclear_wipe.sh"
   Mod4+F2
 
-"xterm -title 'Ghost: MAC' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mac_randomize.sh"
+"cd /tmp && xterm -title 'Ghost: MAC' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mac_randomize.sh"
   Mod4+F3
 
-"xterm -title 'Ghost: Identity' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/identity_randomize.sh"
+"cd /tmp && xterm -title 'Ghost: Identity' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/identity_randomize.sh"
   Mod4+F4
 
-"xterm -title 'Ghost: Tor ON' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_enable.sh"
+"cd /tmp && xterm -title 'Ghost: Tor ON' -bg black -fg green -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_enable.sh"
   Mod4+F5
 
-"xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_disable.sh"
+"cd /tmp && xterm -title 'Ghost: Tor OFF' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/tor_disable.sh"
   Mod4+F6
 
-"xterm -title 'Ghost: AV Kill' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/kill_av.sh"
+"cd /tmp && xterm -title 'Ghost: AV Kill' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/kill_av.sh"
   Mod4+F7
 
-"xterm -title 'Ghost: Wipe' -bg black -fg magenta -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wipe_logs.sh"
+"cd /tmp && xterm -title 'Ghost: Wipe' -bg black -fg magenta -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wipe_logs.sh"
   Mod4+F8
 
-"xterm -title 'Ghost: Leak Test' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/leak_test.sh"
+"cd /tmp && xterm -title 'Ghost: Leak Test' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/leak_test.sh"
   Mod4+F9
 
-"xterm -title 'Ghost: Metadata' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/metadata_wipe.sh ${USER_HOME}"
+"cd /tmp && xterm -title 'Ghost: Metadata' -bg black -fg yellow -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/metadata_wipe.sh ${USER_HOME}"
   Mod4+F10
 
-"xterm -title 'Ghost: WiFi Forget' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wifi_forget.sh"
+"cd /tmp && xterm -title 'Ghost: WiFi Forget' -bg black -fg red -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/wifi_forget.sh"
   Mod4+F11
 
-"xterm -title 'Ghost: Vault' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mount_vault.sh"
+"cd /tmp && xterm -title 'Ghost: Vault' -bg black -fg cyan -fa Monospace -fs 11 -e sudo ${GHOST_DIR}/mount_vault.sh"
   Mod4+F12
 XBRC
 chown "$BUILD_USER" "$USER_HOME/.xbindkeysrc"
