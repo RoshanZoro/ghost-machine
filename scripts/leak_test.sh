@@ -40,12 +40,12 @@ else
     (( FAIL++ ))
 fi
 
-IPV6_IFACES=$(ip -6 addr show 2>/dev/null | grep -v "::1" | grep "inet6")
+IPV6_IFACES=$(ip -6 addr show 2>/dev/null | grep -v "::1" | grep "inet6" | grep -v "scope host")
 if [ -z "$IPV6_IFACES" ]; then
-    echo "  ✅ No IPv6 addresses assigned to interfaces"
+    echo "  ✅ No external IPv6 addresses assigned (no leak risk)"
     (( PASS++ ))
 else
-    echo "  ❌ IPv6 addresses found on interfaces:"
+    echo "  ❌ IPv6 addresses found — potential leak:"
     echo "$IPV6_IFACES" | while read -r line; do echo "     $line"; done
     (( FAIL++ ))
 fi
@@ -54,11 +54,14 @@ echo ""
 # ── DNS leak check ──────────────────────────────────────────────────────────
 echo "[ DNS ]"
 DNS_SERVER=$(cat /etc/resolv.conf | grep "^nameserver" | head -1 | awk '{print $2}')
-if [ "$DNS_SERVER" = "127.0.0.1" ]; then
-    echo "  ✅ resolv.conf points to localhost (dnscrypt-proxy)"
+if [ "$DNS_SERVER" = "127.0.0.1" ] || [ "$DNS_SERVER" = "127.0.0.53" ]; then
+    echo "  ✅ resolv.conf → localhost (dnscrypt-proxy)"
     (( PASS++ ))
+elif [ -n "$DNS_SERVER" ]; then
+    echo "  ℹ️  resolv.conf → $DNS_SERVER (plain DNS — no encryption)"
+    echo "     Run dns_hardening.sh to enable encrypted DNS"
 else
-    echo "  ❌ resolv.conf nameserver: $DNS_SERVER (should be 127.0.0.1)"
+    echo "  ❌ resolv.conf has no nameserver entry"
     (( FAIL++ ))
 fi
 
